@@ -1,0 +1,15 @@
+######meanLength e sdLength hanno per elementi la media e la standard deviation con cui si generano le 
+lunghezze delle 5 parti (Il terzo elemento di entrambe è posto uguale a zero perchè per la terza 
+parte genero punti del flusso finchè non è superata una certa soglia).
+
+
+######considero le prime quattro parti:
+slope,intercept e noisesd[1:4] sono i parametri dei quattro modelli lineari con cui genero i punti
+del flusso (slope,intercept e noise standard deviation)
+
+
+######considero la quinta parte:
+##lenToInt sono i coefficienti della cubica usata per fare regressione della curva intercept(length)
+(dove length sono le lunghezze delle quinte parti delle curve di flusso)
+##intToSlo sono i coefficienti della retta usata per fare regressione della curva slope(intercept)
+##noisesd[5] è la noise standard deviation

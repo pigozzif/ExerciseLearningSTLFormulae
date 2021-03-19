@@ -1,0 +1,1304 @@
+/*
+Grammar for HYPE models
+*/
+
+options {
+    STATIC = false ;
+}
+
+PARSER_BEGIN(HypeParser)
+
+package hype.parser;
+
+import hype.*;
+import java.util.ArrayList;
+import simhya.matheval.Expression;
+
+
+public class HypeParser {
+    HypeModel model;
+       
+    public HypeParser() {
+        this(new java.io.StringReader(""));
+    }
+
+    public HypeModel parseFromString( String modelDef ) throws ParseException, TokenMgrError, NumberFormatException {
+        model = null;
+        this.ReInit(new java.io.StringReader(modelDef));
+        this.Start();
+        return model;
+    }
+
+    public HypeModel parseFromFile( String filename ) throws ParseException, TokenMgrError, NumberFormatException {
+        model = null;
+        try { this.ReInit(new java.io.FileReader(filename)); }
+        catch(java.io.IOException e) {throw new ParseException("Error while opening file " + filename + ": " + e); }
+        this.Start();
+        return model;
+    }
+
+}
+PARSER_END(HypeParser)
+
+/***************************************************************
+SKIP
+***************************************************************/
+
+<DEFAULT,RESET,ID> SKIP :
+{
+  " "
+  | "\t"
+  | "\n"
+  | "\r"
+
+  | <"//" (~["\n","\r"])* ("\n"|"\r"|"\r\n")>
+  | <"/*" (~["*"])* "*" (~["/"] (~["*"])* "*")* "/">
+}
+
+
+/***************************************************************
+TOKENS
+***************************************************************/
+
+ /* LITERALS */
+TOKEN : { < #INTEGER: ("-")? ["0"-"9"] (["0"-"9"])* > }
+TOKEN : { < #FLOAT:
+                            ("-")?  (["0"-"9"])+ "." (["0"-"9"])*
+                            | ("-")?  "." (["0"-"9"])+
+                    > }
+TOKEN : { < #FLOAT_SCIENTIFIC:
+                             ("-")? (["0"-"9"])+ "." (["0"-"9"])* (<EXPONENT>)
+                            |  ("-")? "." (["0"-"9"])+ (<EXPONENT>)
+                            |  ("-")? (["0"-"9"])+ <EXPONENT>
+                    > }
+TOKEN : { < #EXPONENT: ["e","E"] (["+","-"])? (["0"-"9"])+ > }
+TOKEN: { < #LETTER: ["A"-"Z","a"-"z"] > }
+TOKEN: { < #DIGIT: ["0"-"9"] > }
+
+
+	
+/*
+IDENTIFIERS
+*/
+
+
+<DEFAULT> TOKEN : { <SECTION_DEFINITIONS : "#definitions" > }
+<DEFAULT> TOKEN : { <SECTION_MAPPINGS : "#mappings" > }
+<DEFAULT> TOKEN : { <SECTION_SUBCOMPONENTS : "#subcomponents" > }
+<DEFAULT> TOKEN : { <SECTION_COMPONENTS : "#components" > }
+<DEFAULT> TOKEN : { <SECTION_CONTROLLERS : "#controller" > }
+<DEFAULT> TOKEN : { <SECTION_SYSTEM : "#system" > }
+
+<DEFAULT,RESET> TOKEN : { <KEYWORD_HYPE : "hype" > }
+<DEFAULT,RESET> TOKEN : { <KEYWORD_MODEL : "model" > : ID}
+<DEFAULT,RESET> TOKEN : { <KEYWORD_VAR : "var" > }
+<DEFAULT,RESET> TOKEN : { <KEYWORD_PARAM : "param" > }
+<DEFAULT,RESET> TOKEN : { <KEYWORD_GUARD : "guard" > }
+<DEFAULT,RESET> TOKEN : { <KEYWORD_FUNCTION : "function" > }
+<DEFAULT,RESET> TOKEN : { <KEYWORD_EXPR : "expr" > }
+<DEFAULT,RESET> TOKEN : { <KEYWORD_RESET : "reset" > : RESET }
+<DEFAULT,RESET> TOKEN : { <KEYWORD_INFL : "infl" > }
+<DEFAULT,RESET> TOKEN : { <KEYWORD_EVENT : "event" > }
+<DEFAULT,RESET> TOKEN : { <INIT : "init" > }
+
+
+
+
+<DEFAULT,MATH> TOKEN : { <EOL : ";" >  : DEFAULT }
+
+<DEFAULT> TOKEN : { <SEMICOLON : ":" > }
+<DEFAULT> TOKEN : { <DEFINE : ":=" > }
+<DEFAULT,RESET> TOKEN : { <ASSIGN : "=" >  {if (curLexState == DEFAULT) SwitchTo(MATH);
+                                            else if (curLexState == RESET) SwitchTo(DEFAULT); } }
+
+
+<DEFAULT> TOKEN : { <LSQ : "[" > : MATH_RED}
+<MATH> TOKEN : { <RSQ : "]" > : DEFAULT}
+<DEFAULT,MATH> TOKEN : { <AT : "@" > : MATH}
+<DEFAULT,RESET> TOKEN : { <LR : "(" > }
+<DEFAULT,RESET> TOKEN : { <RR : ")" > }
+<DEFAULT, MATH_RED, RESET> TOKEN : { <COMMA : "," > {if (curLexState == MATH_RED) SwitchTo(MATH);} }
+<DEFAULT> TOKEN : { <PRIMED_ASSIGN : "'" (" " | "\t")* "="  > : MATH  }
+<DEFAULT> TOKEN : { <MAPSTO : ":->" > }
+<DEFAULT> TOKEN : { <PLUS : "+" > }
+<DEFAULT> TOKEN : { <DOT : "." > }
+<DEFAULT> TOKEN : { <STAR : "*" > }
+<DEFAULT> TOKEN : { <LANG : "<" > }
+<DEFAULT> TOKEN : { <RANG : ">" > }
+<DEFAULT> TOKEN : { <PARALLEL : "||" > }
+
+<DEFAULT> TOKEN : {<NUMBER : <INTEGER>|<FLOAT>|<FLOAT_SCIENTIFIC> > }
+<DEFAULT,ID,RESET> TOKEN: { <IDENTIFIER: <LETTER>(<LETTER>|<DIGIT>|"_"|"$"|"#")*> 
+                        {   if (curLexState == ID) SwitchTo(DEFAULT); } 
+                    }
+
+<MATH> TOKEN : { <IMPLY : (<SPACE>)* ":->" > : DEFAULT}
+<MATH,DEFAULT> TOKEN : { <AND : "&" > : DEFAULT }
+
+<MATH_RED> TOKEN : { <MINUS : "-" > }
+<MATH_RED> TOKEN : { <MATH_EXPR_RED : (<DIGIT> | <LETTER> | [".","_"] | <SPACE>)+ > }
+
+
+//<MATH> TOKEN : { <TRUE : (<SPACE>)* "true" (<SPACE>)* > }
+<MATH> TOKEN : { <MATH_EXPR : (<DIGIT> | <LETTER> | <SYMBOL> | <SPACE> | <M_AND> | <M_OR>)+ > }
+<MATH> TOKEN : { <#SPACE : " " | "\t"> }
+<MATH> TOKEN : { <#M_AND : "&&" > }
+<MATH> TOKEN : { <#M_OR : "||"> }
+TOKEN : { <#SYMBOL : [".", "=", "+", "-", "*", "/", "%", "^", "(", ")", "!", "<", ">", ",", "_", "$","#" ]> }
+
+
+
+
+/***********************************************
+GRAMMAR RULES
+***********************************************/
+
+void Start() throws NumberFormatException, RuntimeException, ParseException :
+{
+    String name = "model";
+    Token t;
+    boolean def = false, map = false, sub = false, comp = false, cont = false;
+}
+{
+    <KEYWORD_HYPE>
+    <KEYWORD_MODEL>
+    [ 
+        t=<IDENTIFIER> 
+        { name = t.image; }
+    ]
+    {
+        model = new HypeModel(name);
+    }
+    (
+        <SECTION_DEFINITIONS>
+        { def = true; }
+        (
+            Variable()
+        |
+            Parameter()
+        |   
+            Guard()
+        |   
+            Function()
+        |   
+            Reset()
+        |   
+            Expression()        
+        )+
+    |
+        <SECTION_MAPPINGS>
+        { map = true; }
+        (
+            Influence()
+        |   
+            Event()
+        )+
+    |
+        <SECTION_SUBCOMPONENTS>
+        { sub = true; }
+        (
+            Subcomponent()
+        |   
+            SubcomponentTemplate()       
+        )+
+    |
+        <SECTION_COMPONENTS>
+        { comp = true; }
+        (
+            Component()
+        |   
+            ComponentTemplate()       
+        )+
+    |
+        <SECTION_CONTROLLERS>
+        { cont = true; }
+        (
+            SequentialController()
+        |   
+            Controller()       
+        )+
+    )+
+    <SECTION_SYSTEM>
+    { if (!(def && map && sub && comp && cont)) 
+        throw new ParseException("Some model sections are missing: "  
+            + (def ? "#definitions ":"") + (map ? "#mappings ":"") 
+            + (sub ? "#subcomponents ":"") + (comp ? "#components ":"") 
+            + (cont ? "#controller ":"")  ); 
+    }
+    System()
+    <EOF>
+}
+
+
+
+void Variable() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2;
+}
+{
+    <KEYWORD_VAR>
+    t1 = <IDENTIFIER>
+    <ASSIGN>
+    t2 = <MATH_EXPR>
+    <EOL>
+    {
+        model.addVariable(t1.image,t2.image);
+    }
+}
+
+void Parameter() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2;
+}
+{
+    <KEYWORD_PARAM>
+    t1 = <IDENTIFIER>
+    <ASSIGN>
+    t2 = <MATH_EXPR>
+    <EOL>
+    {
+        model.addParameter(t1.image,t2.image);
+    }
+}
+
+void Expression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2;
+}
+{
+    <KEYWORD_EXPR>
+    t1 = <IDENTIFIER>
+    <ASSIGN>
+    t2 = <MATH_EXPR>
+    <EOL>
+    {
+        model.addExpressionVariable(t1.image,t2.image);
+    }
+}
+
+
+void Guard() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    String name;
+    ArrayList<String> parameters = new ArrayList<String>();
+}
+{
+    <KEYWORD_GUARD> 
+    t = <IDENTIFIER> 
+    {
+        name = t.image;
+    }
+    <LR> 
+    [ 
+        t = <IDENTIFIER>
+        { parameters.add(t.image); }
+        (
+            <COMMA> 
+            t = <IDENTIFIER>
+            { parameters.add(t.image); }
+        )* 
+    ] 
+    <RR>   
+    <ASSIGN> 
+    t = <MATH_EXPR> 
+    <EOL>
+    {
+        model.addGuard(name,parameters,t.image);
+    }
+}
+
+
+void Reset() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ResetList resets = new ResetList();
+    String name;
+    ArrayList<String> parameters = new ArrayList<String>();
+}
+{
+    <KEYWORD_RESET> 
+    t = <IDENTIFIER> 
+    { name = t.image; }
+    <LR> 
+    [ 
+        t = <IDENTIFIER>
+        {  parameters.add(t.image); }
+        (
+            <COMMA> 
+            t = <IDENTIFIER>
+            {  parameters.add(t.image); }
+        )* 
+    ] 
+    <RR> 
+    <ASSIGN> 
+    AtomicReset(resets,parameters) 
+    (
+        <AND> 
+        AtomicReset(resets,parameters) 
+    )* 
+    <EOL> 
+    {
+        model.addResetDefinition(name,parameters,resets);
+    }
+}
+
+
+void AtomicReset(ResetList reset, ArrayList<String> parameters) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2;
+}
+{
+    t1 = <IDENTIFIER> 
+    <PRIMED_ASSIGN> 
+    t2 = <MATH_EXPR> 
+    {
+        Expression exp = model.parseExpression(t2.image,parameters);
+        reset.addReset(t1.image,true,exp);
+    }
+}
+
+
+void GroundAtomicReset(ResetList reset) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2;
+}
+{
+    t1 = <IDENTIFIER> 
+    <PRIMED_ASSIGN> 
+    t2 = <MATH_EXPR> 
+    {
+        if(t2.image.contains("$") || t2.image.contains("#")) {
+	    		reset.addReset(t1.image,false,t2.image);
+	    	}else {
+	    		Expression exp = model.parseExpression(t2.image);
+	        exp.setStrExpr(t2.image);
+	        reset.addReset(t1.image,false,exp);
+	    	}
+    }
+}
+
+void ResetCall(ResetList reset) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    String resetName = null;
+    ArrayList<String> params = new ArrayList<String>();
+    ResetList rl;
+}
+{
+    LOOKAHEAD( { getToken(2).kind == LR } )
+    t = <IDENTIFIER> 
+    { resetName = t.image; }
+    <LR> 
+    [ 
+        t = <IDENTIFIER>
+        { params.add(t.image); }
+        (
+            <COMMA> 
+            <IDENTIFIER>
+            { params.add(t.image); }
+        )* 
+    ] 
+    <RR> 
+    {
+        rl = model.instantiateResetDefinition(resetName,params);
+        reset.add(rl);
+    }
+}
+
+void Function() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    String name;
+    ArrayList<String> parameters = new ArrayList<String>();
+}
+{
+    <KEYWORD_FUNCTION> 
+    t = <IDENTIFIER> 
+    {
+        name = t.image;
+    }
+    <LR> 
+    [ 
+        t = <IDENTIFIER>
+        { parameters.add(t.image); }
+        (
+            <COMMA> 
+            t = <IDENTIFIER>
+            { parameters.add(t.image); }
+        )* 
+    ] 
+    <RR>   
+    <ASSIGN> 
+    t = <MATH_EXPR> 
+    <EOL>
+    {
+        model.addFunction(name,parameters,t.image);
+    }
+}
+
+
+void Influence() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2;
+}
+{
+    <KEYWORD_INFL> 
+    t1 = <IDENTIFIER> 
+    <MAPSTO> 
+    t2 = <IDENTIFIER> 
+    <EOL>
+    {
+        model.addInfluenceMap(t1.image,t2.image);
+    }
+}
+
+
+void Event() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    String name;
+    String guard = "";
+    ResetList resets = new ResetList();
+    String rate = null;
+    boolean stoc = false;
+}
+{
+    <KEYWORD_EVENT> 
+    t = <IDENTIFIER> 
+    { name = t.image; }
+    <ASSIGN> 
+    [
+        t = <MATH_EXPR>
+        { guard = t.image; }
+    ]
+    <IMPLY> 
+    [ 
+        ( ResetCall(resets) | GroundAtomicReset(resets) ) 
+        (
+            <AND> 
+            ( ResetCall(resets) | GroundAtomicReset(resets) )
+        )* 
+    ] 
+    [
+        <AT> 
+        t = <MATH_EXPR>
+        { rate = t.image; stoc = true; }
+    ]
+    <EOL>
+    {
+        if (stoc)
+            model.addEvent(name,guard,resets,rate);
+        else
+            model.addEvent(name,guard,resets);
+    }
+}
+
+
+
+
+void Subcomponent() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t,t1,t2;
+    boolean init = false;
+    Subcomponent comp;
+    boolean res;
+}
+{
+    LOOKAHEAD( { getToken(2).kind == SEMICOLON } )
+    t1 = <IDENTIFIER>
+    <SEMICOLON>
+    t2 = <IDENTIFIER>
+    {
+        String var = model.getInfluencedVariable(t2.image);
+        comp = new Subcomponent(t1.image,t2.image,var);
+    }
+    <DEFINE> 
+    res = Flow(comp) 
+    {
+        if (res && init)
+            throw new ParseException("init flow already defined for subcomponent " + t1.image);
+        else if (res)
+            init = true;
+    }
+    (
+        <PLUS> 
+        res = Flow(comp)
+        {
+            if (res && init)
+                throw new ParseException("init flow already defined for subcomponent " + t1.image);
+            else if (res)
+                init = true;
+        }
+    )*
+    <EOL>
+    {
+        if (!init)
+            throw new ParseException("init flow not defined for subcomponent " + t1.image);
+        model.addSubcomponent(comp);
+    }
+}
+
+
+boolean Flow(Subcomponent comp) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    boolean init = false;
+    boolean inc = true;
+    ArrayList<String> events = new ArrayList<String>();
+    String rate;
+    String func;
+}
+{
+    (
+        t = <IDENTIFIER>
+        { if(!model.isEvent(t.image)) 
+            throw new ParseException("Event " + t.image + " in subcomponent " + comp.getName() + " not defined"); 
+          events.add(t.image); }
+    |
+        <INIT>
+        { init = true; }
+    )
+    (   
+        <COMMA>
+        (
+            t = <IDENTIFIER>
+            { if(!model.isEvent(t.image)) 
+                throw new ParseException("Event " + t.image + " in subcomponent " + comp.getName() + " not defined"); 
+              events.add(t.image); }
+        |
+            <INIT>
+            { init = true; }
+        )
+    )*
+    <SEMICOLON>
+    <LSQ>
+    [
+        <MINUS>
+        { inc = false;}
+    ]
+    t = <MATH_EXPR_RED>
+    { rate = t.image; }
+    <COMMA>
+    t = <MATH_EXPR>
+    { func = t.image; }
+    <RSQ>
+    {  
+        comp.addFlow(rate,func,inc,init,events);
+        return init;
+    }
+}
+
+
+
+
+void SubcomponentTemplate() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t,t1,t2;
+    ArrayList<String> boundParams = new ArrayList<String>();
+    boolean init = false;
+    SubcomponentTemplate comp;
+    boolean res;
+}
+{
+    LOOKAHEAD( { getToken(2).kind == LR } )
+    t1 = <IDENTIFIER>
+    <LR>
+    t = <IDENTIFIER>
+    { boundParams.add(t.image); }
+    (
+        <COMMA>
+        t = <IDENTIFIER>
+        { if (!boundParams.contains(t.image))
+                boundParams.add(t.image); 
+          else 
+            throw new ParseException("Bound parameter " + t.image + " defined twice for subcomponent " + t1.image);
+        }
+    )*
+    <RR>
+    {
+        comp = new SubcomponentTemplate(t1.image,boundParams);
+    }
+    <DEFINE> 
+    res = FlowTemplate(comp,boundParams) 
+    {
+        if (res && init)
+            throw new ParseException("init flow already defined for subcomponent " + t1.image);
+        else if (res)
+            init = true;
+    }
+    (
+        <PLUS> 
+        res = FlowTemplate(comp,boundParams)
+        {
+            if (res && init)
+                throw new ParseException("init flow already defined for subcomponent " + t1.image);
+            else if (res)
+                init = true;
+        }
+    )*
+    <EOL>
+    {
+        if (!init)
+            throw new ParseException("init flow not defined for subcomponent " + t1.image);
+        model.addSubcomponentTemplate(comp);
+    }
+}
+
+
+boolean FlowTemplate(SubcomponentTemplate comp, ArrayList<String> boundParams) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    boolean init = false;
+    boolean inc = true;
+    ArrayList<String> events = new ArrayList<String>();
+    String rate;
+    String func;
+}
+{
+    (
+        t = <IDENTIFIER>
+        { events.add(t.image); }
+    |
+        <INIT>
+        { init = true; }
+    )
+    (   
+        <COMMA>
+        (
+            t = <IDENTIFIER>
+            { events.add(t.image); }
+        |
+            <INIT>
+            { init = true; }
+        )
+    )*
+    <SEMICOLON>
+    <LSQ>
+    [
+        <MINUS>
+        { inc = false;}
+    ]
+    t = <MATH_EXPR_RED>
+    { rate = t.image; }
+    <COMMA>
+    t = <MATH_EXPR>
+    { func = t.image; }
+    <RSQ>
+    {  
+        comp.addFlow(model.parseExpression(rate,boundParams),model.parseExpression(func,boundParams),inc,init,events);
+        return init;
+    }
+}
+
+
+    
+ArrayList<String> Sync() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ArrayList<String> sync = new ArrayList<String>();
+}
+{
+    (
+        <LANG>
+        [ 
+            (
+                <STAR> 
+                { sync = null; }
+            |   
+                t = <IDENTIFIER>
+                { sync.add(t.image); }
+                (
+                    <COMMA>
+                    t = <IDENTIFIER>
+                    { sync.add(t.image); }
+                )* 
+            )
+        ]
+        <RANG>
+    |
+        <PARALLEL>
+    )
+    { return sync; }
+}
+
+void StarSync() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+}
+{
+    <LANG> 
+    <STAR> 
+    <RANG>
+}
+
+
+void Component() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    Component comp;
+}
+{
+    LOOKAHEAD( { getToken(2).kind == DEFINE } )
+    t = <IDENTIFIER> 
+    <DEFINE> 
+    { comp = new Component(t.image); }
+    TemplateInstance(comp)
+    ( 
+        StarSync() 
+        TemplateInstance(comp) 
+    )* 
+    <EOL>
+    { model.addComponent(comp); }
+}
+
+
+void ComponentTemplate() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t,t1;
+    ArrayList<String> boundParams = new ArrayList<String>();
+    ComponentTemplate comp;
+}
+{
+    LOOKAHEAD( { getToken(2).kind == LR } )
+    t1 = <IDENTIFIER>
+    <LR>
+    t = <IDENTIFIER>
+    { boundParams.add(t.image); }
+    (
+        <COMMA>
+        t = <IDENTIFIER>
+        { if (!boundParams.contains(t.image))
+                boundParams.add(t.image); 
+          else 
+            throw new ParseException("Bound parameter " + t.image + " defined twice for subcomponent " + t1.image);
+        }
+    )*
+    <RR>
+    {
+        comp = new ComponentTemplate(t1.image,boundParams);
+    }
+    <DEFINE> 
+    TemplateCall(comp,boundParams)
+    ( 
+        StarSync() 
+        TemplateCall(comp,boundParams) 
+    )* 
+    <EOL>
+    { model.addComponentTemplate(comp); }
+}
+
+
+void TemplateCall(ComponentTemplate comp, ArrayList<String> boundParams) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ArrayList<String> callingParams = new ArrayList<String>(); 
+    String callingInfluence = null;
+    String name;
+    boolean template = false;
+    boolean subcomponent = false;
+}
+{
+    t = <IDENTIFIER>
+    { name = t.image; }
+    [
+        <LR>
+        t = <IDENTIFIER>
+        { callingParams.add(t.image); }
+        (
+            <COMMA>
+            t = <IDENTIFIER>
+            { callingParams.add(t.image); }
+        )*
+        <RR>
+        { template = true; }
+        [
+            <SEMICOLON>
+            t = <IDENTIFIER>
+            { callingInfluence = t.image; subcomponent = true; }
+        ]
+    ]
+    {
+        if(!template) {
+            if ( model.isSubcomponent(name) )
+                comp.addSubcomponent(new BindingSubcomponent(model.getSubcomponent(name)));
+            else if ( model.isComponent(name) )
+                comp.addComponent(new BindingComponent(model.getComponent(name)));
+            else throw new ParseException("No component or subcomponent with name " + name);
+        } else {
+            if (subcomponent) {
+                comp.addSubcomponent(new BindingSubcomponent(model.getSubcomponentTemplate(name),boundParams,callingParams,callingInfluence));
+            } else {
+                comp.addComponent(new BindingComponent(model.getComponentTemplate(name),boundParams,callingParams));
+            }
+        }
+    }
+}
+
+
+
+
+
+void TemplateInstance(Component comp) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ArrayList<String> callingParams = new ArrayList<String>(); 
+    String callingInfluence = null;
+    String name;
+    int population = 1;
+    boolean template = false;
+    boolean subcomponent = false;
+}
+{
+    t = <IDENTIFIER>
+    { name = t.image; }
+    (<LR>
+    t = <NUMBER>
+    {population = Integer.parseInt(t.image);}
+    <RR>)?
+    [
+        <LR>
+        t = <IDENTIFIER>
+        { callingParams.add(t.image); }
+        (
+            <COMMA>
+            t = <IDENTIFIER>
+            { callingParams.add(t.image); }
+        )*
+        <RR>
+        { template = true; }
+        [
+            <SEMICOLON>
+            t = <IDENTIFIER>
+            { callingInfluence = t.image; subcomponent = true; }
+        ]
+    ]
+    {
+        if(!template) {
+            if ( model.isSubcomponent(name) )
+                comp.addSubcomponent(model.getSubcomponent(name));
+            else if ( model.isComponent(name) ) {
+            	if(population > 1) {
+            		ArrayList<Component> copyList = model.getComponent(name).CopyComponent(model,population);
+            		for(int i=0;i<copyList.size();i++) {
+                		comp.addComponent(copyList.get(i));
+                	}
+            	}else {
+            		comp.addComponent(model.getComponent(name));
+            	}
+            	//model.getComponent(name).print();
+            }
+            else throw new ParseException("No component or subcomponent with name " + name);
+        } else {
+            if (subcomponent) {
+                comp.addSubcomponent(model.getSubcomponentTemplate(name).instantiate(callingInfluence,model.getInfluencedVariable(callingInfluence),callingParams,model.getSymbolTable()));
+            } else {
+                comp.addComponent(model.getComponentTemplate(name).instantiate(callingParams,model.getInfluenceMap(),model.getSymbolTable()));
+            }
+        }
+    }
+}
+
+
+
+void SequentialController() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1, t2;
+    int num = 1;
+    ArrayList<SequentialController> contrList = null;
+    SequentialController contr = null;
+}
+{
+    LOOKAHEAD( { getToken(7).kind == DOT || getToken(4).kind == DOT  } )
+    t1 = <IDENTIFIER>
+    (<LR>
+    t2 = <NUMBER>
+    {num = Integer.parseInt(t2.image);}
+    <RR>)?
+    <DEFINE>
+    {
+			if(num > 1) {
+          contrList = new ArrayList<SequentialController>();
+          if(!t1.image.contains("$")) {
+          	for(int i=0;i<num;i++) {
+                  contr = new SequentialController(t1.image+"_"+i);
+                  contrList.add(contr);
+            }
+          	AtomicControllers(contrList, num);
+          }else if(t1.image.contains("$$")){
+          	for(int i=0;i<num;i++) {
+          		for(int j=0; j<num; j++) {
+          			if(i != j) {
+          				for(int k=0; k<num; k++) {
+          					if(k!=i && k!=j) {
+          						String suffix = "_"+i+"_"+j+"_"+k;
+          						String strName = t1.image.replace("$$", suffix);
+          						contr = new SequentialController(strName);
+                  		contrList.add(contr);
+          					}
+          				}
+          			}
+          		}  
+            }
+            AtomicControllersWithRecursiveInteraction(contrList, num);
+          }else {
+          	for(int i=0;i<num;i++) {
+          		for(int j=0; j<num; j++) {
+          			if(i != j) {
+          				String suffix = "_"+i+"_"+j;
+          				String strName = t1.image.replace("$", suffix);
+          				contr = new SequentialController(strName);
+                  contrList.add(contr);
+          			}
+          		}  
+            }
+          	AtomicControllersWithInteraction(contrList, num);
+          }
+          
+      }else {
+          contr = new SequentialController(t1.image);
+          AtomicController(contr);
+      }
+    }
+    (
+        <PLUS>
+        {
+        	if(num > 1) {
+		        if(!t1.image.contains("$")) {
+        			AtomicControllers(contrList, num);
+        		}else if(t1.image.contains("$$")) {
+        			AtomicControllersWithRecursiveInteraction(contrList, num);
+        		}else {
+        			AtomicControllersWithInteraction(contrList, num);
+        		}
+        	}else {
+        		AtomicController(contr);
+        	}
+        } 
+        
+    )*
+    <EOL>
+    { 
+    	if(num > 1) {
+    	  for(int i=0;i<contrList.size();i++) {
+        	model.addSequentialController(contrList.get(i));
+        }
+    	}else {
+    		model.addSequentialController(contr);
+    	}
+    }
+}
+
+
+void AtomicController(SequentialController contr) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2;
+}
+{
+    t1 = <IDENTIFIER> 
+    <DOT> 
+    t2 = <IDENTIFIER> 
+    {   
+        if (!model.isEvent(t1.image))
+            throw new ParseException(t1.image + " is not an event");
+        contr.addTransition(t1.image,t2.image);
+    }
+}
+
+void AtomicControllers(ArrayList<SequentialController> contrList, int num) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2;
+}
+{
+    t1 = <IDENTIFIER> 
+    <DOT> 
+    t2 = <IDENTIFIER> 
+    {   
+        if (!model.isEvent(t1.image))
+            throw new ParseException(t1.image + " is not an event");
+        Event e = model.getEvent(t1.image);
+	        for(int i=0;i<num;i++) {
+	        	e.copyEvent(model, i);
+	        	contrList.get(i).addTransition(t1.image+"_"+i,t2.image+"_"+i);
+	        }
+    }
+}
+
+void AtomicControllersWithInteraction(ArrayList<SequentialController> contrList, int num) throws NumberFormatException, RuntimeException, ParseException : 
+{
+   Token t1,t2;
+}
+{
+	t1 = <IDENTIFIER> 
+  <DOT> 
+  t2 = <IDENTIFIER> 
+  {
+		if (!model.isEvent(t1.image))
+		    {if (true) throw new ParseException(t1.image + " is not an event");}
+    Event e = model.getEvent(t1.image);
+    int index = 0;
+    for(int i=0;i<num;i++) {
+  		for(int j=0; j<num; j++) {
+  			if(i != j) {
+  				String suffix = "_"+i+"_"+j;
+  				e.copyEvent(model, i, j);
+  		    contrList.get(index).addTransition(t1.image+suffix,t2.image+suffix);
+  		    index++;
+  			}
+  		}  
+    }
+  }
+}
+
+void AtomicControllersWithRecursiveInteraction(ArrayList<SequentialController> contrList, int num) throws NumberFormatException, RuntimeException, ParseException : 
+{
+   Token t1,t2;
+}
+{
+	t1 = <IDENTIFIER> 
+  <DOT> 
+  t2 = <IDENTIFIER> 
+  {
+		if (!model.isEvent(t1.image))
+		    {if (true) throw new ParseException(t1.image + " is not an event");}
+    Event e = model.getEvent(t1.image);
+    int index = 0;
+    for(int i=0;i<num;i++) {
+  		for(int j=0; j<num; j++) {
+  			if(i != j) {
+  				for(int k=0; k<num; k++) {
+  					if(k!=i && k!=j) {
+  						String suffix = "_"+i+"_"+j+"_"+k;
+  						e.copyRecursiveEvent(model, i, j, k);
+  		    		contrList.get(index).addTransition(t1.image+suffix,t2.image+suffix);
+  		    		index++;	
+  					}
+  				}
+  			}
+  		}  
+    }
+  }
+}
+
+
+void Controller() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    SynchronizationNode n;
+    Controller contr;
+}
+{
+    t = <IDENTIFIER> 
+    <DEFINE> 
+    n = Cont()
+    <EOL>
+    {
+        contr = new Controller(t.image,n);
+        model.addController(contr);
+    }
+}
+
+
+
+
+SynchronizationNode Cont() throws NumberFormatException, RuntimeException, ParseException :
+{
+    ArrayList<String> sync = null, newsync;
+    SynchronizationNode node,n1,n2;
+    boolean  syncSet = false;
+}
+{
+    node = BasicCont()
+    (
+      newsync = Sync()
+      n2 = BasicCont()
+      {
+          if (!syncSet) {
+              sync = newsync;
+              syncSet = true;
+          } else {
+              if (sync == null && newsync != null) {
+                  throw new ParseException("Unexpected synchronization set. They must be equal in an associative expression");
+              } else  if (sync != null && newsync != null) {
+                  if (sync.size() != newsync.size())
+                      throw new ParseException("Unexpected synchronization set. They must be equal in an associative expression");
+                  if (!sync.containsAll(newsync))
+                      throw new ParseException("Unexpected synchronization set. They must be equal in an associative expression");
+              }
+          }
+          n1 = node;
+          if (sync != null)
+              node = new SynchronizationNode(sync);
+          else 
+              node = new SynchronizationNode();
+          node.setLeftChild(n1);
+          node.setRightChild(n2);
+          n1.setParent(node);
+          n2.setParent(node);
+      }
+    )*
+    { return node; }
+}
+
+
+
+SynchronizationNode BasicCont() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t,t2;
+    SynchronizationNode node;
+    int num = 1;
+}
+{
+    (
+        t = <IDENTIFIER>
+        (<LR>
+		    t2 = <NUMBER>
+		    {num = Integer.parseInt(t2.image);}
+		    <RR>)?
+        {		
+					if(num == 1) {
+					  if (model.isSequentialController(t.image)) {
+					  	node = new SynchronizationNode(model.getSequentialController(t.image));
+					  } else if (model.isController(t.image)) {
+					      node = new SynchronizationNode(model.getController(t.image));
+					  }else {
+					  	if (true) throw new ParseException("controller or sequential controller " + t.image +  " is not defined");
+					  }
+					} else {
+						if(!t.image.contains("$")) {
+							if (model.isSequentialController(t.image+"_"+0)) {
+					            node = ConstructSyncNode(t.image, num, true);
+							} else if (model.isController(t.image+"_"+0)) {
+					            node = ConstructSyncNode(t.image, num, false);
+							} else {if (true) throw new ParseException("controller or sequential controller " + t.image + "_index" +  " is not defined");}
+						} else if(t.image.contains("$$")){
+							node = ConstructSyncNodeWithRecursiveInteration(t.image, num);
+						} else {
+							node = ConstructSyncNodeWithInteration(t.image, num);
+						}  
+					}
+            
+        }
+    |
+        <LR>
+        node = Cont()
+        <RR>
+    )
+    { return node; }
+}
+
+SynchronizationNode ConstructSyncNode(String contrName, int num, boolean isSeqContr) throws NumberFormatException, RuntimeException, ParseException :
+{
+    SynchronizationNode parent = null;
+    SynchronizationNode leftChild = null;
+    SynchronizationNode rightChild = null;
+}
+{
+    
+    { 
+    	for(int i=0; i<num; i++) {
+				if(i == 0) {
+					if(isSeqContr) {
+						leftChild = new SynchronizationNode(model.getSequentialController(contrName + "_" + i));
+					}else {
+						leftChild = new SynchronizationNode(model.getController(contrName + "_" + i));
+					}
+				}else {
+					if(isSeqContr) {
+						rightChild = new SynchronizationNode(model.getSequentialController(contrName + "_" + i));
+					}else {
+						rightChild = new SynchronizationNode(model.getController(contrName + "_" + i));
+					}
+					parent = new SynchronizationNode();
+					parent.setLeftChild(leftChild);
+		      parent.setRightChild(rightChild);
+		      leftChild.setParent(parent);
+		      rightChild.setParent(parent);
+		      leftChild = parent;
+				}
+		}
+		return parent; 
+	}
+}
+
+SynchronizationNode ConstructSyncNodeWithInteration(String contrName, int num) throws ParseException, NumberFormatException, RuntimeException, ParseException : 
+{
+		SynchronizationNode parent = null;
+		SynchronizationNode leftChild = null;
+		SynchronizationNode rightChild = null;
+}
+{
+	{
+		for(int i=0; i<num; i++) {
+			for(int j=0; j<num; j++) {
+				if(i != j) {
+					String suffix = "_"+i+"_"+j;
+    				String name = contrName.replace("$", suffix);
+					if(i == 0 && j == 1) {
+						leftChild = new SynchronizationNode(model.getSequentialController(name));
+					}else {
+						rightChild = new SynchronizationNode(model.getSequentialController(name));
+						parent = new SynchronizationNode();
+            parent.setLeftChild(leftChild);
+						parent.setRightChild(rightChild);
+					  leftChild.setParent(parent);
+					  rightChild.setParent(parent);
+					  leftChild = parent;
+					}
+    				
+    		}
+			}
+     }
+     return parent;
+  }
+}
+
+SynchronizationNode ConstructSyncNodeWithRecursiveInteration(String contrName, int num) throws ParseException, NumberFormatException, RuntimeException, ParseException : 
+{
+		SynchronizationNode parent = null;
+		SynchronizationNode leftChild = null;
+		SynchronizationNode rightChild = null;
+}
+{
+	{
+		for(int i=0; i<num; i++) {
+			for(int j=0; j<num; j++) {
+				if(i != j) {
+					for(int k=0; k<num; k++) {
+						if(k!=i && k!=j) {
+							String suffix = "_"+i+"_"+j+"_"+k;
+		    			String name = contrName.replace("$$", suffix);
+							if(i == 0 && j == 1 && k == 2) {
+								leftChild = new SynchronizationNode(model.getSequentialController(name));
+							}else {
+								rightChild = new SynchronizationNode(model.getSequentialController(name));
+								parent = new SynchronizationNode();
+		            parent.setLeftChild(leftChild);
+								parent.setRightChild(rightChild);
+							  leftChild.setParent(parent);
+							  rightChild.setParent(parent);
+							  leftChild = parent;
+							}
+						}
+					}
+    		}
+			}
+     }
+     return parent;
+  }
+}
+
+void System() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2;
+}
+{
+    t1 = <IDENTIFIER>
+    StarSync()
+    t2 = <IDENTIFIER>
+    <EOL>
+    { 
+        model.setUncontrolledSystem(t1.image);
+        model.setSystemController(t2.image);
+    }
+}

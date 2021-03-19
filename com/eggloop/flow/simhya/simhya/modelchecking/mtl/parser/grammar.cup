@@ -1,0 +1,181 @@
+/*  PARSER GRAMMAR FOR MTL FORMULAE  */
+package simhya.modelchecking.mtl.parser;
+
+import java_cup.runtime.*;
+import simhya.modelchecking.mtl.*;
+
+
+/* Terminals (tokens returned by the scanner). */
+terminal           SEMICOLON, COMMA;
+terminal String    PLUS, MINUS, TIMES, DIVIDE, MOD, POW;
+terminal String    UMINUS, LROUND, RROUND, LSQUARE, RSQUARE, LBRACE, RBRACE;
+terminal String    IDENTIFIER, EVENTUALLY, GLOBALLY, PROB, NEXT, UNTIL, WUNTIL;
+terminal String    EQUAL, NOTEQUAL, LESSEQUAL, GREATEREQUAL, LESS, GREATER;
+terminal           EQ, QMARK;
+terminal           AND, OR, NOT, IMPLY;
+terminal String    NUMBER;
+terminal           TRUE, FALSE;
+
+/* Non-terminals */
+non terminal MTLformula  state_formula;
+non terminal MTLnode     path_formula;
+non terminal String      atomic_constraint, atomic_proposition, expr, basic_expr, args;
+non terminal String      relop, threshold_identifier;
+non terminal Threshold   threshold;
+non terminal ParametricInterval    interval;
+non terminal             semicolon;
+
+
+/* Precedences */
+
+precedence left EVENTUALLY, GLOBALLY, NEXT;
+precedence left IMPLY;
+precedence left OR;
+precedence left AND;
+precedence left NOT;
+precedence nonassoc EQUAL, NOTEQUAL, LESSEQUAL, GREATEREQUAL, LESS, GREATER;
+precedence left PLUS, MINUS;
+precedence left TIMES, DIVIDE, MOD;
+precedence left POW;
+precedence left UMINUS;
+
+/* The grammar */
+state_formula ::= PROB EQ QMARK  LSQUARE path_formula:f RSQUARE semicolon
+                  {:  RESULT = new MTLformula(f); :}
+                | PROB threshold:t LSQUARE path_formula:f RSQUARE semicolon
+                  {:  RESULT = new MTLformula(t,f); :};
+
+semicolon ::= SEMICOLON | ;
+
+path_formula  ::= atomic_proposition:a 
+                  {:  RESULT = new MTLatom(a,false); :}
+                | atomic_constraint:a 
+                  {:  RESULT = new MTLatom(a,true); :}
+                | TRUE 
+                  {:  RESULT = new MTLconstantAtom(true); :}
+                | FALSE 
+                  {:  RESULT = new MTLconstantAtom(false); :}
+                | LROUND path_formula:f RROUND 
+                  {:  RESULT = f;  :}
+                | path_formula:f1 AND path_formula:f2 
+                  {:  RESULT = new MTLand(f1,f2); :} 
+                | path_formula:f1 OR path_formula:f2 
+                  {:  RESULT = new MTLor(f1,f2); :} 
+                | path_formula:f1 IMPLY path_formula:f2 
+                  {:  RESULT = new MTLimply(f1,f2); :} 
+                | NOT path_formula:f 
+                  {:  RESULT = new MTLnot(f); :} 
+                | EVENTUALLY  path_formula:f  
+                  {:  RESULT = new MTLeventually(f);  :}
+                | EVENTUALLY interval:i  path_formula:f  
+                  {:  RESULT = new MTLeventually(i,f);  :}
+                | GLOBALLY  path_formula:f  
+                  {:  RESULT = new MTLglobally(f);  :}
+                | GLOBALLY interval:i path_formula:f 
+                  {:  RESULT = new MTLglobally(i,f);  :}
+                | NEXT  path_formula:f 
+                  {:  RESULT = new MTLnext(f);  :}
+                | NEXT interval:i path_formula:f 
+                  {:  RESULT = new MTLnext(i,f);  :}
+                | LROUND path_formula:f1 RROUND UNTIL LROUND path_formula:f2 RROUND 
+                  {:  RESULT = new MTLuntil(f1,f2);  :}
+                | LROUND path_formula:f1 RROUND UNTIL interval:i LROUND path_formula:f2 RROUND 
+                  {:  RESULT = new MTLuntil(i,f1,f2);  :}
+                | LROUND path_formula:f1 RROUND WUNTIL LROUND path_formula:f2 RROUND 
+                  {:  RESULT = new MTLweakUntil(f1,f2);  :}
+                | LROUND path_formula:f1 RROUND WUNTIL interval:i LROUND path_formula:f2 RROUND 
+                  {:  RESULT = new MTLweakUntil(i,f1,f2);  :}
+                ;
+          
+threshold_identifier ::=  IDENTIFIER:id   {: RESULT = id; :}                          
+                        | NUMBER:n       {: RESULT = n; :};
+                    
+threshold ::=  LESSEQUAL threshold_identifier:t
+               {:  RESULT = new Threshold(ThresholdType.LESS_EQUAL,t); :}
+             | GREATEREQUAL threshold_identifier:t
+               {:  RESULT = new Threshold(ThresholdType.GREATER_EQUAL,t); :}
+             |  LESS threshold_identifier:t
+               {:  RESULT = new Threshold(ThresholdType.LESS,t); :}
+             |  GREATER threshold_identifier:t
+               {:  RESULT = new Threshold(ThresholdType.GREATER,t); :}
+             ;
+
+interval  ::=  LESSEQUAL threshold_identifier:t
+               {: ParametricInterval i = new ParametricInterval();
+                  i.setLowerToZero();
+                  i.setUpper(t);
+                  RESULT = i;
+               :}
+             | GREATEREQUAL threshold_identifier:t
+               {: ParametricInterval i = new ParametricInterval();
+                  i.setUpperToInfinity();
+                  i.setLower(t);
+                  RESULT = i;   
+               :}
+             | EQ  threshold_identifier:t
+               {: ParametricInterval i = new ParametricInterval();
+                  i.setLower(t);
+                  i.setUpper(t);
+                  RESULT = i;   
+               :}
+             | LSQUARE threshold_identifier:t1 COMMA threshold_identifier:t2 RSQUARE
+               {: ParametricInterval i = new ParametricInterval();
+                  i.setLower(t1);
+                  i.setUpper(t2);
+                  RESULT = i;   
+               :}
+             ;
+
+
+      
+atomic_constraint ::= LBRACE expr:e1 relop:r expr:e2 RBRACE
+                    {: RESULT = new String(e1 + " " + r + " " + e2); :};
+
+atomic_proposition ::= IDENTIFIER:id  {: RESULT = id; :};
+
+relop ::=  EQUAL:id   {: RESULT = id; :}
+         | NOTEQUAL:id   {: RESULT = id; :}
+         | LESSEQUAL:id   {: RESULT = id; :}
+         | GREATEREQUAL:id   {: RESULT = id; :}
+         | LESS:id   {: RESULT = id; :} 
+         | GREATER:id   {: RESULT = id; :};
+
+
+basic_expr ::= NUMBER:n   {: RESULT = n; :}
+             | IDENTIFIER:id   {: RESULT = id; :} 
+             | IDENTIFIER:id LROUND args:a RROUND  
+                {: RESULT = new String( id + "(" + a + ")" ); :};
+
+args ::= expr:e COMMA args:a  
+         {: RESULT = new String( e + ", " + a ); :}
+       | expr:e {:  RESULT = e; :};  
+
+
+expr      ::= expr:e1 PLUS:o expr:e2    
+	      {: RESULT = new String( e1 + " " + o + " " + e2 );  :} 
+	      | 
+              expr:e1 MINUS:o expr:e2    
+              {: RESULT = new String( e1 + " " + o + " " + e2 ); :} 
+	      | 
+              expr:e1 TIMES:o expr:e2 
+	      {: RESULT = new String( e1 + " " + o + " " + e2 ); :} 
+	      | 
+              expr:e1 DIVIDE:o expr:e2 
+	      {: RESULT = new String( e1 + " " + o + " " + e2 ); :} 
+	      | 
+              expr:e1 MOD:o expr:e2 
+	      {: RESULT = new String( e1 + " " + o + " " + e2 ); :} 
+	      | 
+              expr:e1 POW:o expr:e2 
+	      {: RESULT = new String( e1 + o + e2 ); :} 
+	      | 
+              basic_expr:e                 
+	      {: RESULT = e; :} 
+	      | 
+              MINUS:o expr:e             
+	      {: RESULT = new String( o + e ); :} 
+	      %prec UMINUS
+	      | 
+              LROUND expr:e RROUND    
+	      {: RESULT = new String( "( " + e + " )" ); :} 
+	      ;

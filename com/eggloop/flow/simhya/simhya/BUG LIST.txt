@@ -1,0 +1,10 @@
+* plot for ODE and HYBRID
+
+* phaseplot for statistics?
+
+
+BUGS:
+
+* phaseplot / plot for final & stat, forbid attempt without data
+* check for skew/kurtosis --- throw exception
+

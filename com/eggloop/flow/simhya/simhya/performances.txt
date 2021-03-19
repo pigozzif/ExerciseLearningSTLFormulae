@@ -1,0 +1,16 @@
+
+
+SIR final time 50000
+
+DIZZY fast rate: 4.5 sec
+DIZZY eval rate: 7.25 sec
+
+SSA faststore fast rate var array: 4.54 sec
+SSA faststore fast rate var SymbolArray:  4.62 sec
+SSA faststore eval fast update: 5.53 sec
+SSA faststore eval and eval update: 7.40 sec
+
+pure SSA faststore fast rate var array: 4.21 sec
+pure SSA faststore fast rate var SymbolArray: 4.18
+pure SSA faststore eval fast update: 5.4 sec
+pure SSA faststore eval and eval update: 6.8 sec

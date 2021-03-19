@@ -1,0 +1,18 @@
+######considero le prime quattro parti:
+##meanLength e sdLength hanno per elementi la media e la standard deviation con cui si generano le 
+lunghezze (Il terzo elemento di entrambe è posto uguale a zero perchè per la terza 
+parte genero punti del flusso finchè non è superata una certa soglia).
+##slope,intercept e noisesd sono i parametri dei quattro modelli lineari con cui genero i punti
+del flusso (slope,intercept e noise standard deviation)
+
+
+######considero la quinta parte:
+####considero la prima approssimazione della curva (prima parte del modello gerarchico):
+##lenToInt sono i coefficienti [w,d] della iperbole y=w/(x-d) usata per fare regressione della curva 
+intercept(length) (dove length sono le lunghezze delle quinte parti delle curve di flusso)
+##intToSlo sono i coefficienti della retta usata per fare regressione della curva slope(intercept)
+####considero la differenza tra curva reale e prima approssimazione (seconda parte del modello gerarchico):
+##meanPolyk e covPolyk, k=1,2,3 sono la media e la matrice di covarianza con cui si generano i polinomi delle
+3 parti della curva
+##meanNoisePoly e sdNoisePoly sono la media e la standard deviation del rumore che si ha approssimando
+con polinomi
