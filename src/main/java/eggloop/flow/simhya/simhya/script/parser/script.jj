@@ -1,0 +1,2186 @@
+/*
+Grammar for the script language
+*/
+
+options {
+	STATIC = false ;
+}
+
+PARSER_BEGIN(ScriptParser)
+
+package simhya.script.parser;
+
+import simhya.script.*;
+import simhya.simengine.*;
+import simhya.simengine.ode.IntegratorType;
+import java.util.ArrayList;
+import simhya.dataprocessing.chart.PlotFileType;
+import simhya.dataprocessing.StatType;
+import simhya.simengine.hybrid.GlobalSwitchType;
+import simhya.GlobalOptions;
+import simhya.modelchecking.SMCtype;
+import simhya.modelchecking.EstimationMethod;
+import simhya.modelchecking.ConfidenceBoundsMethod;
+import simhya.modelchecking.TestMethod;
+
+
+
+
+public class ScriptParser {
+    private CommandManager cmd;
+    private int modelIndex = 0;
+    private int collectorIndex = 0;
+    private int statIndex = 0;
+    private int exporerIndex = 0;
+    
+
+    public ScriptParser(CommandManager comMan) {
+        this(new java.io.StringReader(""));
+        this.cmd = comMan;
+    }
+
+    public void parseCommand( String command ) throws ParseException, TokenMgrError, NumberFormatException {
+        this.ReInit(new java.io.StringReader(command));
+        this.Start();
+    }
+
+    private ArrayList<Double> generateList(double first, double last, int k, boolean log) throws ParseException {
+        ArrayList<Double> list = new ArrayList<Double>();
+        if (k<2) throw new ParseException("Not enough points in the parameter range. At least 2 required.");
+        if (!log) {
+            double step = (last-first)/(double)(k-1);
+            for (int i=0;i<k;i++)
+                list.add(first + i*step);
+        } else {
+            double logarithmicFirst = Math.log10(first);
+            double step = step = (Math.log10(last) - Math.log10(first))/(double)(k-1);
+             for (int i=0;i<k;i++)
+                list.add(Math.pow(10, logarithmicFirst + i*step));
+        }
+        return list;
+    }
+
+
+}
+PARSER_END(ScriptParser)
+
+
+
+/***************************************************************
+SKIP
+***************************************************************/
+
+<*> SKIP :
+{
+  " "  | "\t" | "\n" | "\r"
+/*  | <"//" (~["\n","\r"])* ("\n"|"\r"|"\r\n")> */
+}
+
+/***************************************************************
+TOKENS
+***************************************************************/
+
+ /* LITERALS */
+<*> TOKEN : { < INTEGER: ("-")? ["0"-"9"] (["0"-"9"])* > }
+<*> TOKEN : { < FLOAT:
+                            ("-")?  (["0"-"9"])+ "." (["0"-"9"])*
+                            | ("-")?  "." (["0"-"9"])+
+                    > }
+<*> TOKEN : { < FLOAT_SCIENTIFIC:
+                             ("-")? (["0"-"9"])+ "." (["0"-"9"])* (<EXPONENT>)
+                            |  ("-")? "." (["0"-"9"])+ (<EXPONENT>)
+                            |  ("-")? (["0"-"9"])+ <EXPONENT>
+                    > }
+<*> TOKEN : { < #EXPONENT: ["e","E"] (["+","-"])? (["0"-"9"])+ > }
+<*> TOKEN: { < #LETTER: ["A"-"Z","a"-"z"] > }
+<*> TOKEN: { < #DIGIT: ["0"-"9"] > }
+
+
+/*
+IDENTIFIERS
+*/
+
+<DEFAULT> TOKEN : { <LOAD : "load" > : FILESPEC}
+<DEFAULT> TOKEN : { <FREE : "free" >}
+<DEFAULT> TOKEN : { <HELP : "help" > : FILESPEC}
+<DEFAULT> TOKEN : { <SAVE : "save" > }
+<DEFAULT> TOKEN : { <PLOT : "plot" > }
+<DEFAULT> TOKEN : { <PHASEPLOT : "phaseplot" > }
+<DEFAULT> TOKEN : { <PLOT3D : "plot3d" > }
+<DEFAULT> TOKEN : { <HIST : "hist" > }
+<DEFAULT> TOKEN : { <SIMULATE : "simulate" > }
+//<DEFAULT> TOKEN : { <STATISTICS : "statistics" > }
+<DEFAULT> TOKEN : { <EXECUTE : "execute" > : FILESPEC}
+<DEFAULT> TOKEN : { <EXPLORE : "explore" > }
+<DEFAULT> TOKEN : { <SET : "set" > }
+<DEFAULT> TOKEN : { <OPTION : "option" > }
+<DEFAULT> TOKEN : { <LN : "ln" > }
+<DEFAULT> TOKEN : { <MC : "mc" > }
+<DEFAULT> TOKEN : { <MCPLOT : "mc.plot" > }
+<DEFAULT> TOKEN : { <MCSAVE : "mc.save" > }
+
+
+<DEFAULT> TOKEN : { <VARS : "vars" > }
+<DEFAULT> TOKEN : { <FIX : "fix" > }
+<DEFAULT> TOKEN : { <TRAJECTORY : "trajectory" > }
+<DEFAULT> TOKEN : { <FILE : "file" > : FILESPEC }
+<DEFAULT> TOKEN : { <TEMPLATE : "template" > : FILESPEC }
+<DEFAULT> TOKEN : { <FILETYPE : "filetype" > }
+<DEFAULT> TOKEN : { <X : "x" > : ID}
+<DEFAULT> TOKEN : { <XVAR : "xvar" > : ID }
+<DEFAULT> TOKEN : { <Y : "y" > : ID}
+<DEFAULT> TOKEN : { <YVAR : "yvar" > : ID }
+<DEFAULT> TOKEN : { <Z : "z" > : ID}
+<DEFAULT> TOKEN : { <ZVAR : "zvar" > : ID }
+<DEFAULT> TOKEN : { <STAT : "stat" > }
+<DEFAULT> TOKEN : { <STATONLY : "statonly" > }
+<DEFAULT> TOKEN : { <TYPE : "type" > }
+<DEFAULT> TOKEN : { <TIME : "time" > }
+<DEFAULT> TOKEN : { <TF : "tf" > }
+<DEFAULT> TOKEN : { <T0 : "t0" > }
+<DEFAULT> TOKEN : { <RUNS : "runs" > }
+<DEFAULT> TOKEN : { <BURNOUT : "burnout" > }
+<DEFAULT> TOKEN : { <VERBOSE : "verbose" > }
+<DEFAULT> TOKEN : { <USECACHE : "usecache" > }
+<DEFAULT> TOKEN : { <TIMESTEP : "timestep" > }
+<DEFAULT> TOKEN : { <POINTS : "points" > }
+<DEFAULT> TOKEN : { <FINALSTATEONLY : "finalstateonly" > }
+<DEFAULT> TOKEN : { <FINAL : "final" > }
+<DEFAULT> TOKEN : { <ATOL : "atol" > }
+<DEFAULT> TOKEN : { <RTOL : "rtol" > }
+<DEFAULT> TOKEN : { <MAXSTEP : "maxstep" > }
+<DEFAULT> TOKEN : { <MINSTEP : "minstep" > }
+<DEFAULT> TOKEN : { <MAXEVENTSTEP : "maxeventstep" > }
+<DEFAULT> TOKEN : { <MAXEVENTITER : "maxeventiter" > }
+<DEFAULT> TOKEN : { <MAXEVENTERROR : "maxeventerror" > }
+<DEFAULT> TOKEN : { <INTEGRATOR : "integrator" > }
+<DEFAULT> TOKEN : { <BINS : "bins" > }
+<DEFAULT> TOKEN : { <STORE : "store" > }
+<DEFAULT> TOKEN : { <DISTRIBUTION : "distribution" > }
+<DEFAULT> TOKEN : { <RANGE : "range" > }
+<DEFAULT> TOKEN : { <SWITCH : "switch" > }
+<DEFAULT> TOKEN : { <RULES : "rules" > : FILESPEC }
+<DEFAULT> TOKEN : { <POPULATION : "population" > }
+<DEFAULT> TOKEN : { <NONE : "none" > }
+<DEFAULT> TOKEN : { <HYPE : "hype" > }
+<DEFAULT> TOKEN : { <BIOPEPA : "biopepa" > }
+<DEFAULT> TOKEN : { <FLAT : "flat" > }
+<DEFAULT> TOKEN : { <SBML : "sbml" > }
+<DEFAULT> TOKEN : { <MATLAB : ("matlab"|"Matlab") > }
+<DEFAULT> TOKEN : { <MATLAB_LN : ("matlab.ln"|"Matlab.ln") > }
+<DEFAULT> TOKEN : { <COMPILEMATH : "compilemath" > }
+<DEFAULT> TOKEN : { <TRUE : ("true"|"T"|"TRUE"|"True") > }
+<DEFAULT> TOKEN : { <FALSE : ("false"|"F"|"FALSE"|"False") > }
+<DEFAULT> TOKEN : { <QUERY : "query" > : QUERYBEGIN }
+<DEFAULT> TOKEN : { <AUTO : "auto" >  }
+<DEFAULT> TOKEN : { <CHECK : "check" >  }
+<DEFAULT> TOKEN : { <ADAPTIVE : "adaptive" >  }
+<DEFAULT> TOKEN : { <CHERNOFF : "chernoff" >  }
+<DEFAULT> TOKEN : { <BAYESIAN : "bayesian" >  }
+<DEFAULT> TOKEN : { <CONFIDENCE : "confidence" >  }
+<DEFAULT> TOKEN : { <ERROR : "error" >  }
+<DEFAULT> TOKEN : { <BOUNDS : "bounds" >  }
+<DEFAULT> TOKEN : { <WILSON : "wilson" >  }
+<DEFAULT> TOKEN : { <NORMAL : "normal" >  }
+<DEFAULT> TOKEN : { <SUMMARY : "summary" >  }
+<DEFAULT> TOKEN : { <FORMULA : "formula" >  }
+<DEFAULT> TOKEN : { <POINTWISE : "pointwise" >  }
+<DEFAULT> TOKEN : { <SIGNAL : "signal" >  }
+<DEFAULT> TOKEN : { <ROBUST : "robust" >  }
+<DEFAULT> TOKEN : { <PRIOR : "prior" >  }
+<DEFAULT> TOKEN : { <REGULARISE : "regularise" >  }
+<DEFAULT> TOKEN : { <SIGNIFICANCE : "significance" >  }
+<DEFAULT> TOKEN : { <POWER : "power" >  }
+<DEFAULT> TOKEN : { <INDIFFERENCE : "indifference" >  }
+<DEFAULT> TOKEN : { <MAX : "max" >  }
+<DEFAULT> TOKEN : { <TYPEI : "typeI" >  }
+<DEFAULT> TOKEN : { <TYPEII : "typeII" >  }
+
+
+<DEFAULT> TOKEN : { <ALL : "all" > }
+<DEFAULT> TOKEN : { <COLORMAP : "colormap" > }
+<DEFAULT> TOKEN : { <SURFACE : "surface" > }
+
+<DEFAULT> TOKEN : { <ODE : "ode" > }
+<DEFAULT> TOKEN : { <HYBRID : "hybrid" > }
+<DEFAULT> TOKEN : { <GB : "gb" > }
+<DEFAULT> TOKEN : { <SSA : "ssa" > }
+
+<DEFAULT> TOKEN : { <DP85 : "dp85" > }
+<DEFAULT> TOKEN : { <RK4 : "rk4" > }
+
+<DEFAULT> TOKEN : { <PNG : "png" > }
+<DEFAULT> TOKEN : { <JPG : "jpg" > }
+<DEFAULT> TOKEN : { <PDF : "pdf" > }
+<DEFAULT> TOKEN : { <TEX : "tex" > }
+
+<DEFAULT> TOKEN : { <AVERAGE : "average" > }
+<DEFAULT> TOKEN : { <VARIANCE : "variance" > }
+<DEFAULT> TOKEN : { <STDDEV : "stddev" > }
+<DEFAULT> TOKEN : { <CV : "cv" > }
+<DEFAULT> TOKEN : { <FANO : "fano" > }
+<DEFAULT> TOKEN : { <SKEW : "skew" > }
+<DEFAULT> TOKEN : { <KURTOSIS : "kurtosis" > }
+<DEFAULT> TOKEN : { <STDERR : "stderr" > }
+
+<LIST> TOKEN : { <LOG : "log" > }
+<LIST> TOKEN : { <DIESIS : "#" > }
+
+<*> TOKEN : { <ASSIGN : "=" > }
+<DEFAULT> TOKEN : { <DOT : "." > }
+<DEFAULT,LIST> TOKEN : { <SEMICOLON : ":" > }
+<DEFAULT,LIST,NUMERIC_LIST,QUERYLIST,INTERVAL> TOKEN : { <COMMA : "," > }
+<DEFAULT,FILESPEC,LIST,QUERYLIST> TOKEN : { <R_OPEN : "(" > }
+<DEFAULT,LIST,QUERYLIST> TOKEN : { <R_CLOSE : ")" > }
+<DEFAULT> TOKEN : { <S_OPEN : "[" > : LIST }
+<LIST> TOKEN : { <S_OPEN_LIST : "[" > : NUMERIC_LIST }
+<NUMERIC_LIST> TOKEN : { <S_CLOSE_LIST : "]" > : LIST}
+<LIST> TOKEN : { <S_CLOSE : "]" > : DEFAULT}
+<DEFAULT> TOKEN : { <DOLLAR : "$" > : ID }
+
+
+<QUERYBEGIN> TOKEN : { <SQ_OPEN : "[" > : QUERYLIST }
+<QUERYLIST> TOKEN : { <SQ_OPEN_INT : "[" > : INTERVAL}
+<INTERVAL> TOKEN : { <SQ_CLOSE_INT : "]" > : QUERYLIST}
+<QUERYLIST> TOKEN : { <SQ_CLOSE : "]" > : DEFAULT}
+<QUERYLIST> TOKEN : { <PLUS : "+" > }
+<QUERYLIST> TOKEN : { <MINUS : "-" > }
+<QUERYLIST> TOKEN : { <TIMES : "*" > }
+<QUERYLIST> TOKEN : { <NORM : "norm" > }
+<QUERYLIST> TOKEN : { <GREATER : ">" > }
+<QUERYLIST> TOKEN : { <LESS : "<" > }
+
+
+<ID> TOKEN: { <IDENTIFIER: <LETTER>(<LETTER>|<DIGIT>|"_"|".")*> : DEFAULT }
+<LIST,QUERYLIST,INTERVAL> TOKEN: { <MODEL_IDENTIFIER: <LETTER>(<LETTER>|<DIGIT>|"_"|".")*> }
+
+
+<FILESPEC> TOKEN: { <FILENAME: (<LETTER> | <DIGIT> | "_" | "." | "-" | "/" | "\\")+> : DEFAULT}
+
+
+
+void Start() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   String assignVar = null;
+}
+{
+    (
+        [
+            <DOLLAR>
+            t = <IDENTIFIER>
+            {
+                assignVar = t.image;
+            }
+            <ASSIGN>
+        ]
+        (
+            Load(assignVar)
+            |
+            Ln(assignVar)
+            |
+            Simulate(assignVar)
+ //           |
+ //           Statistics(assignVar)
+            |
+            Explore(assignVar)
+            |
+            MC(assignVar)
+        )
+    |
+        Plot()
+    |
+        PhasePlot()
+    |
+        Plot3d()
+    |
+        Hist()
+    |
+        Save()
+    |
+        Free()
+    |
+        Help()
+    |
+        Execute()
+    |
+        Set()
+    |
+        Option()
+    |
+        PlotMC()
+    |
+        SaveMC()
+    )
+    <EOF>
+    {
+        
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////
+/////////   SET OPTIONS
+////////////////////////////////////////////////////////////////////////////
+
+void Option() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+}
+{
+    <OPTION>
+    <R_OPEN>
+    (
+        <COMPILEMATH> <ASSIGN> 
+        ( <TRUE> {GlobalOptions.compileMath = true; cmd.printMessage("Option compilemath set to true");} 
+        | <FALSE> {GlobalOptions.compileMath = false;  cmd.printMessage("Option compilemath set to false");} )
+    )+
+    <R_CLOSE>
+}
+
+////////////////////////////////////////////////////////////////////////////
+/////////   LOAD MODEL
+////////////////////////////////////////////////////////////////////////////
+
+void Load(String varName) throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t,t1=null;
+   final int MODEL_FLAT = 0; 
+   final int MODEL_HYPE = 1;
+   final int MODEL_BIOPEPA = 2; 
+   final int CHECKING = 3; 
+   int type = MODEL_FLAT; 
+}
+{ 
+    <LOAD>
+    <R_OPEN>
+    t = <FILENAME>
+    [
+        <COMMA>
+        ( <HYPE> { type= MODEL_HYPE; }
+        | <FLAT> { type= MODEL_FLAT; }
+        | <BIOPEPA> { type= MODEL_BIOPEPA; }
+        | <CHECK> 
+          <ASSIGN> 
+          <DOLLAR>
+          t1 = <IDENTIFIER>
+          {
+             type = CHECKING;
+          }
+        )
+    ]
+    <R_CLOSE>
+    {
+        if (varName == null) {
+            varName = "model" + modelIndex;
+            modelIndex ++;
+            while (cmd.containsVariable(varName)) {
+                varName = "model" + modelIndex;
+                modelIndex ++;
+            }
+        }
+        switch(type) {
+            case MODEL_FLAT:
+                cmd.loadFlatModel(varName,t.image);
+                break;
+            case MODEL_HYPE:
+                cmd.loadHypeModel(varName,t.image);
+                break;
+            case MODEL_BIOPEPA:
+                cmd.loadBiopepaModel(varName,t.image);
+                break;
+            case CHECKING:
+                cmd.loadSMCenvironment(varName,t.image,t1.image);
+                break;
+            default:
+                throw new ParseException("Unknown model type");
+                break;
+        }
+        
+    }
+}
+
+/*
+////////////////////////////////////////////////////////////////////////////
+/////////   Linear Noise approximation LN
+////////////////////////////////////////////////////////////////////////////
+
+void Ln(String varName) throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   if (varName == null) {
+        varName = "ln" + modelIndex;
+        modelIndex ++;
+        while (cmd.containsVariable(varName)) {
+            varName = "ln" + modelIndex;
+            modelIndex ++;
+        }
+   }
+}
+{
+    <LN>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    <R_CLOSE>
+    {
+        cmd.generateLinearNoiseFlatModel(varName,t.image);
+    }
+}
+*/
+
+////////////////////////////////////////////////////////////////////////////
+/////////   EXECUTE SCRIPT
+////////////////////////////////////////////////////////////////////////////
+
+void Execute() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+}
+{
+    <EXECUTE>
+    <R_OPEN>
+    t = <FILENAME>
+    <R_CLOSE>
+    {
+        cmd.executeScriptFile(t.image);
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////
+/////////   SIMULATE MODEL
+////////////////////////////////////////////////////////////////////////////
+
+void Simulate(String varName) throws NumberFormatException, RuntimeException, ParseException :
+{
+   int i; double d,d1;
+   Token t;
+   ArrayList<String> list;
+   SimulationManager manager;
+   if (varName == null) {
+        varName = "data" + collectorIndex;
+        collectorIndex ++;
+        while (cmd.containsVariable(varName)) {
+            varName = "data" + collectorIndex;
+            collectorIndex ++;
+        }
+   }
+}
+{
+    <SIMULATE>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {
+        manager = new SimulationManager(t.image,varName,cmd);
+    }
+    (
+        <COMMA>
+        (
+            [ <TYPE>
+              <ASSIGN>
+            ]
+            ( <ODE> {manager.type = SimType.ODE;}
+            | <HYBRID> {manager.type = SimType.HYBRID;}
+            | <SSA> {manager.type = SimType.SSA;}
+            | <GB> {manager.type = SimType.GB;}
+            )
+        |
+            ( <TIME> | <TF> )
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.tf = d; }
+        |
+            <RUNS>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.runs = i; }
+        |
+            <VERBOSE>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.verbose = i; }
+        |
+            <T0>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.t0 = d; }
+        |
+            <BURNOUT>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.burnout = d; }
+        |
+            <TIMESTEP>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.timestep = d; }
+        |
+            <ATOL>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.atol = d; }
+        |
+            <RTOL>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.rtol = d; }
+        |
+            <MAXSTEP>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.maxStep = d; }
+        |
+            <MINSTEP>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.minStep = d; }
+        |
+            <MAXEVENTSTEP>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.maxEventStep = d; }
+        |
+            <MAXEVENTERROR>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.maxEventError = d; }
+        |
+            <POINTS>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.points = i; }
+        |
+            <MAXEVENTITER>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.maxEventIter = i; }
+        |
+            <USECACHE>
+            { manager.useCache = true; }
+        |
+            <FINALSTATEONLY>
+            { manager.finalStateOnly = true; }
+        |
+            <INTEGRATOR>
+            <ASSIGN>
+            ( <DP85> {manager.odetype = IntegratorType.DP85;}
+            | <RK4> {manager.odetype = IntegratorType.RK4;}
+            )
+        |
+            <SAVE>
+            <ASSIGN>
+            (
+                <ALL>
+                { manager.varsToSave = null; }
+            |
+                list = SymbolList()
+                { manager.varsToSave = list; }
+            )
+        |
+            <STORE>
+            <ASSIGN>
+            (
+                <AUTO>
+                {manager.storeLevel = manager.STORE_AUTO;}
+                |
+                <ALL>
+                {manager.storeLevel = manager.STORE_ALL;}
+                |
+                <FINAL>
+                {manager.storeLevel = manager.STORE_FINAL;}
+                |  
+                <STATONLY>
+                {manager.storeLevel = manager.STORE_STAT;}
+            )
+        |
+            <SWITCH>
+            <DOT>
+            (
+                <NONE>
+                { manager.switchType = GlobalSwitchType.NO_SWITCH; }
+            |
+                <RULES>
+                <ASSIGN>
+                t = <FILENAME>
+                { manager.ruleFile = t.image; }
+            |
+                <POPULATION>
+                { manager.switchType = GlobalSwitchType.POPULATION; }
+                <R_OPEN>
+                ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+                { d = Double.parseDouble(t.image); manager.discrete2continuousThreshold = d;}
+                <COMMA>
+                ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+                { d = Double.parseDouble(t.image); manager.continuous2discreteThreshold = d;}
+                <R_CLOSE>
+            )
+        )
+    )*
+    <R_CLOSE>
+    {
+        try {
+            manager.simulate();
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////
+/////////   Linear Noise approximation LN
+////////////////////////////////////////////////////////////////////////////
+
+void Ln(String varName) throws NumberFormatException, RuntimeException, ParseException :
+{
+   int i; double d,d1;
+   Token t;
+   ArrayList<String> list;
+   LinearNoiseManager manager;
+   if (varName == null) {
+        varName = "data" + collectorIndex;
+        collectorIndex ++;
+        while (cmd.containsVariable(varName)) {
+            varName = "data" + collectorIndex;
+            collectorIndex ++;
+        }
+   }
+}
+{
+    <LN>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {
+        manager = new LinearNoiseManager(varName,t.image,cmd);
+    }
+    (
+        <COMMA>
+        (
+            ( <TIME> | <TF> )
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.tf = d; }
+        |
+            <VERBOSE>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.verbose = i; }
+        |
+            <T0>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.t0 = d; }
+        |
+            <ATOL>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.atol = d; }
+        |
+            <RTOL>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.rtol = d; }
+        |
+            <MAXSTEP>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.maxStep = d; }
+        |
+            <MINSTEP>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.minStep = d; }
+        |
+            <MAXEVENTSTEP>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.maxEventStep = d; }
+        |
+            <MAXEVENTERROR>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.maxEventError = d; }
+        |
+            <POINTS>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.points = i; }
+        |
+            <MAXEVENTITER>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.maxEventIter = i; }
+        |
+            <USECACHE>
+            { manager.useCache = true; }
+        |
+            <FINALSTATEONLY>
+            { manager.finalStateOnly = true; }
+        |
+            <INTEGRATOR>
+            <ASSIGN>
+            ( <DP85> {manager.odetype = IntegratorType.DP85;}
+            | <RK4> {manager.odetype = IntegratorType.RK4;}
+            )
+        |
+            <QUERY>
+            <ASSIGN>
+            LinearNoiseQueryList(manager)
+        )
+    )*
+    <R_CLOSE>
+    {
+        try {
+            manager.simulate();
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////
+/////////   COMPUTE STATISTICS
+////////////////////////////////////////////////////////////////////////////
+/*
+void Statistics(String varName) throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   if (varName == null) {
+        varName = "stat" + statIndex;
+        statIndex ++;
+        while (cmd.containsVariable(varName)) {
+            varName = "stat" + statIndex;
+            statIndex ++;
+        }
+    }
+}
+{
+    <STATISTICS>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    <R_CLOSE>
+    { 
+        cmd.computeStatistics(t.image,varName);
+    }
+}
+*/
+
+////////////////////////////////////////////////////////////////////////////
+/////////   EXPLORE PARAMETER SPACE
+////////////////////////////////////////////////////////////////////////////
+
+void Explore(String varName) throws NumberFormatException, RuntimeException, ParseException :
+{
+   int i; double d;
+   Token t;
+   ArrayList<String> list;
+   ExplorationManager manager;
+   if (varName == null) {
+        varName = "expdata" + exporerIndex;
+        exporerIndex ++;
+        while (cmd.containsVariable(varName)) {
+            varName = "expdata" + exporerIndex;
+            exporerIndex ++;
+        }
+   }
+}
+{
+    <EXPLORE>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {
+        manager = new ExplorationManager(t.image,varName,cmd);
+    }
+    (
+        <COMMA>
+        (
+            [ <TYPE>
+              <ASSIGN>
+            ]
+            ( <ODE> {manager.type = SimType.ODE;}
+            | <HYBRID> {manager.type = SimType.HYBRID;}
+            | <SSA> {manager.type = SimType.SSA;}
+            | <GB> {manager.type = SimType.GB;}
+            | <LN> {manager.type = SimType.LN;}
+            )
+        |
+            ( <TIME> | <TF> )
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.tf = d; }
+        |
+            <RUNS>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.runs = i; }
+        |
+            <VERBOSE>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.verbose = i; }
+        |
+            <T0>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.t0 = d; }
+        |
+            <BURNOUT>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.burnout = d; }
+        |
+            <POINTS>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.points = i; }
+        |
+            <ATOL>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.atol = d; }
+        |
+            <RTOL>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.rtol = d; }
+        |
+            <MAXSTEP>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.maxStep = d; }
+        |
+            <MINSTEP>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.minStep = d; }
+        |
+            <MAXEVENTSTEP>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.maxEventStep = d; }
+        |
+            <MAXEVENTERROR>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.maxEventError = d; }
+        |
+            <MAXEVENTITER>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.maxEventIter = i; }
+        |
+            <USECACHE>
+            { manager.useCache = true; }
+        |
+            <INTEGRATOR>
+            <ASSIGN>
+            ( <DP85> {manager.odetype = IntegratorType.DP85;}
+            | <RK4> {manager.odetype = IntegratorType.RK4;}
+            )
+        |
+            <SAVE>
+            <ASSIGN>
+            (
+                <ALL>
+                { manager.varsToSave = null; }
+            |
+                list = SymbolList()
+                { manager.varsToSave = list; }
+            )
+        |
+            <SWITCH>
+            <DOT>
+            (
+                <NONE>
+                { manager.switchType = GlobalSwitchType.NO_SWITCH; }
+            |
+                <RULES>
+                <ASSIGN>
+                t = <FILENAME>
+                { manager.ruleFile = t.image; }
+            |
+                <POPULATION>
+                { manager.switchType = GlobalSwitchType.POPULATION; }
+                <R_OPEN>
+                ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+                { d = Double.parseDouble(t.image); manager.discrete2continuousThreshold = d;}
+                <COMMA>
+                ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+                { d = Double.parseDouble(t.image); manager.continuous2discreteThreshold = d;}
+                <R_CLOSE>
+            )    
+        |
+            <STORE>
+            <ASSIGN>
+            (
+                <ALL>
+                {   manager.finalStateOnly = false;
+                    manager.storeDistributions = true;
+                    manager.storeTrajectories = true;
+                }
+            |
+                <FINAL>
+                {   manager.finalStateOnly = true;
+                    manager.storeDistributions = false;
+                    manager.storeTrajectories = false;
+                }
+            |
+                <DISTRIBUTION>
+                {   manager.finalStateOnly = true;
+                    manager.storeDistributions = true;
+                    manager.storeTrajectories = false;
+                }
+            |
+                <TRAJECTORY>
+                {   manager.finalStateOnly = false;
+                    manager.storeDistributions = false;
+                    manager.storeTrajectories = true;
+                }
+            )
+        |
+            <FILE>
+            <ASSIGN>
+            t = <FILENAME>
+            { manager.filename = t.image; }
+        |
+            <TEMPLATE>
+            <ASSIGN>
+            t = <FILENAME>
+            { manager.fileTemplate = t.image; }
+        |
+            <RANGE>
+            <ASSIGN>
+            RangeList(manager)
+        |
+            <QUERY>
+            <ASSIGN>
+            LinearNoiseQueryList(manager)
+        )
+    )*
+    <R_CLOSE>
+    {
+        try {
+            manager.simulate();
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////
+/////////   TRACE PLOTTER
+////////////////////////////////////////////////////////////////////////////
+
+void Plot() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   int i,j;
+   double d;
+   ArrayList<String> varList = new ArrayList<String>();
+   TracePlotter plotter;
+   ArrayList<Integer> idList;
+   ArrayList<String> stringList;
+   ArrayList<ArrayList<Double>> valueLists;
+}
+{
+    <PLOT>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    { varList.add(t.image); }
+    (
+        LOOKAHEAD( { getToken(2).kind == DOLLAR } )
+        <COMMA>
+        <DOLLAR>
+        t = <IDENTIFIER>
+        { varList.add(t.image); }
+    )*
+        {
+            try {
+                if (varList.size() == 1)
+                    plotter = new TracePlotter(varList.get(0),cmd);
+                else
+                    plotter = new TracePlotter(varList,cmd);
+            } catch (Exception e) {
+                throw new ParseException(e.getMessage());
+            }
+        }
+    (
+        <COMMA>
+        (
+            <FILETYPE>
+            <ASSIGN>
+            ( <PNG> {plotter.fileType = PlotFileType.PNG;}
+            | <JPG> {plotter.fileType = PlotFileType.JPG;}
+            | <PDF> {plotter.fileType = PlotFileType.PDF;}
+            | <TEX> {plotter.fileType = PlotFileType.TEX;}
+            )
+        |
+            <STAT>
+            {plotter.plotStats  = true;}
+            <ASSIGN>
+            ( <AVERAGE> {plotter.stat = StatType.AVERAGE;}
+            | <VARIANCE> {plotter.stat = StatType.VARIANCE;}
+            | <STDDEV> {plotter.stat = StatType.STDDEV;}
+            | <CV> {plotter.stat = StatType.CV;}
+            | <FANO> {plotter.stat = StatType.FANO;}
+            | <SKEW> {plotter.stat = StatType.SKEW;}
+            | <KURTOSIS> {plotter.stat = StatType.KURTOSIS;}
+            | <STDERR> {plotter.stat = StatType.STDERR;}
+            )
+        |
+            <FILE>
+            <ASSIGN>
+            t = <FILENAME>
+            { plotter.filename = t.image; plotter.plotToFile = true;}
+        |
+            <TRAJECTORY>
+            {plotter.plotStats  = false;}
+            <ASSIGN>
+            (
+                t = <INTEGER>
+                { i = Integer.parseInt(t.image); plotter.singleTrajectory = i; }
+                [
+                    <SEMICOLON>
+                    t = <INTEGER>
+                    { j = Integer.parseInt(t.image); plotter.firstTrajectory = i; plotter.lastTrajectory = j; }
+                ]
+            |
+                idList = IntegerList()
+                { plotter.trajectoryList = idList;}
+            |
+                <ALL>
+                { plotter.allTrajectories = true; }
+            )
+        |
+            <VARS>
+            <ASSIGN>
+            stringList = SymbolList()
+            { plotter.varsToPlot = stringList; }
+        |
+            <TIME>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> 
+                { d = Double.parseDouble(t.image); plotter.timePoint = d; }
+            | <FINAL>
+               {plotter.timePoint = TracePlotter.FINAL_STATE; }
+            )  
+        |
+            ( <X> | <XVAR> )
+            <ASSIGN>
+            t = <IDENTIFIER>
+            { plotter.xVar = t.image; }
+        |
+            <FIX>
+            <ASSIGN>
+            { stringList = new ArrayList<String>(); valueLists = new ArrayList<ArrayList<Double>>(); }
+            ParamValueList(stringList,valueLists)
+            { plotter.fixedParams = stringList; plotter.fixedParamsValues = valueLists;}
+        )
+    )*
+    <R_CLOSE>
+    {
+        cmd.plot(plotter,varList);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////
+/////////   PHASE PLOTTER
+////////////////////////////////////////////////////////////////////////////
+
+void PhasePlot() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   int i,j;
+   double d;
+   String var;
+   PhasePlotter plotter;
+   ArrayList<Integer> idList = new ArrayList<Integer>();
+   ArrayList<String> stringList;
+   ArrayList<ArrayList<Double>> valueLists;
+}
+{
+    <PHASEPLOT>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {   var = t.image;
+        try {
+            plotter = new PhasePlotter(var,cmd);
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+    (
+        <COMMA>
+        (
+            <FILETYPE>
+            <ASSIGN>
+            ( <PNG> {plotter.fileType = PlotFileType.PNG;}
+            | <JPG> {plotter.fileType = PlotFileType.JPG;}
+            | <PDF> {plotter.fileType = PlotFileType.PDF;}
+            | <TEX> {plotter.fileType = PlotFileType.TEX;}
+            )
+        |
+            <STAT>
+            {plotter.plotStats  = true;}
+            <ASSIGN>
+            ( <AVERAGE> {plotter.stat = StatType.AVERAGE;}
+            | <VARIANCE> {plotter.stat = StatType.VARIANCE;}
+            | <STDDEV> {plotter.stat = StatType.STDDEV;}
+            | <CV> {plotter.stat = StatType.CV;}
+            | <FANO> {plotter.stat = StatType.FANO;}
+            | <SKEW> {plotter.stat = StatType.SKEW;}
+            | <KURTOSIS> {plotter.stat = StatType.KURTOSIS;}
+            | <STDERR> {plotter.stat = StatType.STDERR;}
+            )
+        |
+            <FILE>
+            <ASSIGN>
+            t = <FILENAME>
+            { plotter.filename = t.image; plotter.plotToFile = true;}
+        |
+            <TRAJECTORY>
+            {plotter.plotStats  = false;}
+            <ASSIGN>
+            (
+                t = <INTEGER>
+                { i = Integer.parseInt(t.image); idList.add(i); plotter.trajectoryList = idList; }
+                [
+                    <SEMICOLON>
+                    t = <INTEGER>
+                    {   j = Integer.parseInt(t.image);
+                        for (int k = i+1;k<=j;k++)
+                            idList.add(k);
+                    }
+                ]
+            |
+                idList = IntegerList()
+                { plotter.trajectoryList = idList;}
+            |
+                <ALL>
+                { plotter.allTrajectories = true; }
+            )
+        |
+            ( <X> | <XVAR> )
+            <ASSIGN>
+            t = <IDENTIFIER>
+            { plotter.xvar = t.image; }
+        |
+            ( <Y> | <YVAR> )
+            <ASSIGN>
+            t = <IDENTIFIER>
+            { plotter.yvar = t.image; }
+        |
+            ( <Z> | <ZVAR> )
+            <ASSIGN>
+            t = <IDENTIFIER>
+            { plotter.zvar = t.image; }
+        |
+            <FIX>
+            <ASSIGN>
+            { stringList = new ArrayList<String>(); valueLists = new ArrayList<ArrayList<Double>>(); }
+            ParamValueList(stringList,valueLists)
+            { plotter.fixedParams = stringList; plotter.fixedParamsValues = valueLists;}
+        )
+    )*
+    <R_CLOSE>
+    {
+        cmd.plot(plotter,var);
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////
+/////////   HISTOGRAM PLOTTER
+////////////////////////////////////////////////////////////////////////////
+
+void Hist() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   int i,j;
+   double d;
+   String var;
+   HistPlotter plotter;
+   ArrayList<String> stringList;
+
+}
+{
+    <HIST>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {   var = t.image;
+        try {
+            plotter = new HistPlotter(var,cmd);
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+    (
+        <COMMA>
+        (
+            <FILETYPE>
+            <ASSIGN>
+            ( <PNG> {plotter.fileType = PlotFileType.PNG;}
+            | <JPG> {plotter.fileType = PlotFileType.JPG;}
+            | <PDF> {plotter.fileType = PlotFileType.PDF;}
+            | <TEX> {plotter.fileType = PlotFileType.TEX;}
+            )
+        |
+            <FILE>
+            <ASSIGN>
+            t = <FILENAME>
+            { plotter.filename = t.image; plotter.plotToFile = true;}
+         |
+            <VARS>
+            <ASSIGN>
+            stringList = SymbolList()
+            { plotter.varsToPlot = stringList; }
+        |
+            <TIME>
+            <ASSIGN>
+            (  ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+                { d = Double.parseDouble(t.image); plotter.timePoint = d; }
+            | <FINAL>
+               {plotter.timePoint = TracePlotter.FINAL_STATE; }
+            )
+        |
+            <BINS>
+            <ASSIGN>
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); plotter.bins = i; plotter.autoBin = false; }
+        )
+    )*
+    <R_CLOSE>
+    {
+        cmd.plot(plotter,var);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////
+/////////   SURFACE PLOTTER
+////////////////////////////////////////////////////////////////////////////
+
+void Plot3d() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   int i,j;
+   double d;
+   String var;
+   SurfacePlotter plotter;
+   ArrayList<String> stringList;
+   ArrayList<ArrayList<Double>> valueLists;
+}
+{
+    <PLOT3D>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {   var = t.image;
+        try {
+            plotter = new SurfacePlotter(var,cmd);
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+    (
+        <COMMA>
+        (
+            <FILETYPE>
+            <ASSIGN>
+            ( <PNG> {plotter.fileType = PlotFileType.PNG;}
+            | <JPG> {plotter.fileType = PlotFileType.JPG;}
+            | <PDF> {plotter.fileType = PlotFileType.PDF;}
+            | <TEX> {plotter.fileType = PlotFileType.TEX;}
+            )
+        |
+            <STAT>
+            {plotter.plotStats  = true;}
+            <ASSIGN>
+            ( <AVERAGE> {plotter.stat = StatType.AVERAGE;}
+            | <VARIANCE> {plotter.stat = StatType.VARIANCE;}
+            | <STDDEV> {plotter.stat = StatType.STDDEV;}
+            | <CV> {plotter.stat = StatType.CV;}
+            | <FANO> {plotter.stat = StatType.FANO;}
+            | <SKEW> {plotter.stat = StatType.SKEW;}
+            | <KURTOSIS> {plotter.stat = StatType.KURTOSIS;}
+            | <STDERR> {plotter.stat = StatType.STDERR;}
+            )
+        |
+            <FILE>
+            <ASSIGN>
+            t = <FILENAME>
+            { plotter.filename = t.image; plotter.plotToFile = true;}
+         |
+            <TYPE>
+            <ASSIGN>
+            ( <COLORMAP> { plotter.plotType = SurfacePlotter.COLORMAP;}
+            | <SURFACE> { plotter.plotType = SurfacePlotter.SURFACE;} )
+        |
+            ( <X> | <XVAR> )
+            <ASSIGN>
+            t = <IDENTIFIER>
+            { plotter.xvar = t.image; }
+        |
+            ( <Y> | <YVAR> )
+            <ASSIGN>
+            t = <IDENTIFIER>
+            { plotter.yvar = t.image; }
+        |
+            ( <Z> | <ZVAR> )
+            <ASSIGN>
+            t = <IDENTIFIER>
+            { plotter.zvar = t.image; }
+        |
+            <FIX>
+            <ASSIGN>
+            { stringList = new ArrayList<String>(); valueLists = new ArrayList<ArrayList<Double>>(); }
+            ParamValueList(stringList,valueLists)
+            { plotter.fixedParams = stringList; plotter.fixedParamsValues = valueLists;}
+        )
+    )*
+    <R_CLOSE>
+    {
+        cmd.plot(plotter,var);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////
+/////////   MC 
+////////////////////////////////////////////////////////////////////////////
+
+
+void MC(String outVar) throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t,t1;
+   int i,j;
+   double d,d1;
+   ModelCheckerManager manager;
+   String variable;
+   long l;
+   ArrayList<String> formulaList = null;
+}
+{
+    <MC>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {   variable = t.image;
+        try {
+          manager = new ModelCheckerManager(variable,outVar,cmd);
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+    ( 
+        <COMMA>
+        (
+            <ADAPTIVE> { manager.adaptive = true;  }
+            [
+                <ASSIGN>
+                t = <INTEGER>
+                { i = Integer.parseInt(t.image); manager.adaptiveStep = i; }
+            ]
+        |
+            <CHERNOFF> { manager.setChernoff();}
+        |
+            <BAYESIAN> { manager.setBayesian();}
+        | 
+            <RUNS> 
+            <ASSIGN> 
+            t = <INTEGER>
+            { l = Long.parseLong(t.image); manager.setSamples(l); }
+        |
+            <POINTWISE> { manager.type = SMCtype.POINTWISE; }
+        |
+            <SIGNAL> { manager.type = SMCtype.SIGNAL; }
+        | 
+            <ROBUST> { manager.type = SMCtype.ROBUST; } 
+        |
+            <CONFIDENCE>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.confidence = d; }
+        | 
+            <ERROR>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.error = d; }
+        | 
+            <BOUNDS> 
+            <ASSIGN>
+            ( <WILSON> {manager.confidenceType = ConfidenceBoundsMethod.WILSON; }
+            | <NORMAL> {manager.confidenceType = ConfidenceBoundsMethod.NORMAL; }
+            )
+        |
+            <TIME>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.finalTime = d; }
+        |    
+            ( <ODE> {manager.simType = SimType.ODE;}
+            | <HYBRID> {manager.simType = SimType.HYBRID;}
+            | <SSA> {manager.simType = SimType.SSA;}
+            | <GB> {manager.simType = SimType.GB;}
+            )    
+        |
+            <FORMULA>
+            <ASSIGN>
+            formulaList = SymbolList()
+            { manager.formulae = formulaList;}
+        |
+            <PRIOR>
+            <ASSIGN>
+            <R_OPEN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.priorGood = d; }
+            <COMMA>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.priorBad = d; }
+            <R_CLOSE>
+        |
+            <REGULARISE>
+            { manager.regularise = true; }
+            [
+                <ASSIGN>
+                <R_OPEN>
+                ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+                { d = Double.parseDouble(t.image); manager.priorGood = d; }
+                <COMMA>
+                ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+                { d = Double.parseDouble(t.image); manager.priorBad = d; }
+                <R_CLOSE>
+            ]
+        |
+            ( <SIGNIFICANCE> | <TYPEI> )
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.significance = d; }
+        |
+            <POWER>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.power = d; }
+        |
+            <TYPEII>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.power = 1-d; }
+        |
+            <INDIFFERENCE>
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image); manager.epsilon = d; }
+        | 
+            <MAX> 
+            <ASSIGN> 
+            t = <INTEGER>
+            { l = Long.parseLong(t.image); manager.maxRuns = l; }
+        | 
+            <POINTS> 
+            <ASSIGN> 
+            t = <INTEGER>
+            { i = Integer.parseInt(t.image); manager.points = i; }
+        |
+            <EXPLORE>
+            <ASSIGN>
+            <S_OPEN>
+            t1 = <MODEL_IDENTIFIER>
+            <SEMICOLON>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d = Double.parseDouble(t.image);  }  
+            <SEMICOLON>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { d1 = Double.parseDouble(t.image);     
+                try {manager.setExplore(t1.image,d,d1);} 
+                catch(Exception e) {throw new ParseException(e.getMessage());} 
+            }  
+            <S_CLOSE>
+        )
+
+    )*
+    <R_CLOSE>
+    {
+        if (formulaList == null)
+            manager.setAllFormulas();
+        else if (!manager.checkFormulaConsistency()) {
+            String ff = manager.getInconsistentFormula();
+            throw new ParseException("Formula " + ff + " does not exist.");
+        }
+            
+        try {
+            manager.check();
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+
+}
+
+////////////////////////////////////////////////////////////////////////////
+/////////   MC PLOTTER
+////////////////////////////////////////////////////////////////////////////
+
+
+void PlotMC() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   int i,j;
+   double d;
+   ModelCheckingOutputManager plotter;
+   String variable;
+   ArrayList<String> formulaList  = null;
+}
+{
+    <MCPLOT>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {   variable = t.image;
+        try {
+          plotter = new ModelCheckingOutputManager(variable,cmd);
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+    (
+        <COMMA>
+        (
+            <FILETYPE>
+            <ASSIGN>
+            ( <PNG> {plotter.fileType = PlotFileType.PNG;}
+            | <JPG> {plotter.fileType = PlotFileType.JPG;}
+            | <PDF> {plotter.fileType = PlotFileType.PDF;}
+            | <TEX> {plotter.fileType = PlotFileType.TEX;}
+            )
+        |
+            <FILE>
+            <ASSIGN>
+            t = <FILENAME>
+            { plotter.filename = t.image; plotter.plotToFile = true;}
+        |
+            <FORMULA>
+            <ASSIGN>
+            formulaList = SymbolList()
+            { plotter.formulas = formulaList; }
+        |
+            <SIGNAL> { plotter.plotSignals = true; }
+            [ <ASSIGN>
+              <ALL>
+              {plotter.allSignals = true;} 
+            ]   
+        )
+    )*
+    <R_CLOSE>
+    {
+        plotter.finalise();   
+        cmd.plot(plotter,variable);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////
+/////////   MC SAVER
+////////////////////////////////////////////////////////////////////////////
+
+
+void SaveMC() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   int i,j;
+   double d;
+   ModelCheckingOutputManager saver;
+   String variable;
+   ArrayList<String> formulaList  = null;
+}
+{
+    <MCSAVE>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {   variable = t.image;
+        try {
+          saver = new ModelCheckingOutputManager(variable,cmd);
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+    (
+        <COMMA>
+        (    
+            <FILE>
+            <ASSIGN>
+            t = <FILENAME>
+            { saver.filename = t.image; }
+        |
+            <FORMULA>
+            <ASSIGN>
+            formulaList = SymbolList()
+            { saver.formulas = formulaList; }
+        |
+            <SIGNAL> { saver.saveSignals(); }
+            [ <ASSIGN>
+              <ALL>
+              {saver.allSignals = true;} 
+            ] 
+        |   <SUMMARY> { saver.saveSummary(); }
+        )
+    )*
+    <R_CLOSE>
+    {
+        saver.finalise();
+        cmd.save(saver,variable);
+    }
+
+}
+
+////////////////////////////////////////////////////////////////////////////
+/////////   SAVER
+////////////////////////////////////////////////////////////////////////////
+
+
+void Save() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   int i,j;
+   double d;
+   ObjectSaver saver;
+   String variable;
+   ArrayList<String> varList;
+}
+{
+    <SAVE>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {   variable = t.image;
+        try {
+          saver = new ObjectSaver(variable,cmd);
+        } catch (Exception e) {
+            throw new ParseException(e.getMessage());
+        }
+    }
+    (
+        <COMMA>
+        (
+            <STAT>
+            {saver.saveStats  = true;}
+            <ASSIGN>
+            ( <AVERAGE> {saver.stat = StatType.AVERAGE;}
+            | <VARIANCE> {saver.stat = StatType.VARIANCE;}
+            | <STDDEV> {saver.stat = StatType.STDDEV;}
+            | <CV> {saver.stat = StatType.CV;}
+            | <FANO> {saver.stat = StatType.FANO;}
+            | <SKEW> {saver.stat = StatType.SKEW;}
+            | <KURTOSIS> {saver.stat = StatType.KURTOSIS;}
+            | <STDERR> {saver.stat = StatType.STDERR;}
+            )
+        |
+            <VARS>
+            <ASSIGN>
+            varList = SymbolList()
+            { saver.varsToSave = varList; }
+        |
+            <FILE>
+            <ASSIGN>
+            t = <FILENAME>
+            { saver.filename = t.image; }
+        |
+            <TRAJECTORY>
+            {saver.saveStats  = false;}
+            <ASSIGN>
+            (
+                t = <INTEGER>
+                { i = Integer.parseInt(t.image); saver.trajectoryId = i; }
+            |
+                <ALL>
+                { saver.allTrajectories = true; }
+            )
+        |
+            <TIME>
+            {saver.saveStats  = true;}
+            <ASSIGN>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC>
+                { d = Double.parseDouble(t.image); saver.saveTime = d; }
+            | <FINAL>
+               {saver.saveFinalStateOnly = true; }
+            )
+        |
+            [ <TYPE>
+            <ASSIGN> ]
+            ( 
+                <FLAT>
+                { saver.modelType = ObjectSaver.FLAT; }
+            |
+                <SBML> 
+                { saver.modelType = ObjectSaver.SBML; }
+            |
+                <MATLAB>
+                { saver.modelType = ObjectSaver.MATLAB; }
+            |
+                <MATLAB_LN>
+                { saver.modelType = ObjectSaver.MATLAB_LN; }
+            )
+        )
+    )*
+    <R_CLOSE>
+    {
+        cmd.save(saver,variable);
+    }
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////
+/////////   SETTER
+////////////////////////////////////////////////////////////////////////////
+
+
+void Set() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   String variable;
+}
+{
+    <SET>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    {   variable = t.image; }
+    <COMMA>
+    AssignmentList(variable)
+    <R_CLOSE>
+}
+
+
+////////////////////////////////////////////////////////////////////////////
+/////////   HELP
+////////////////////////////////////////////////////////////////////////////
+
+
+void Help() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   String c = null;
+}
+{
+    <HELP>
+    [ t = <FILENAME> {c = t.image;} ]
+    {
+        if (c == null)
+            cmd.help();
+        else
+            cmd.help(c);
+    }
+    
+}
+
+
+void Free() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+}
+{
+    <FREE>
+    <R_OPEN>
+    <DOLLAR>
+    t = <IDENTIFIER>
+    <R_CLOSE>
+    {
+        cmd.free(t.image);
+    }
+
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+//////////////////////       LIST LOADERS
+////////////////////////////////////////////////////////////////////////////////////
+
+
+void ParamValueList(ArrayList<String> paramList, ArrayList<ArrayList<Double>> valueLists) throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   int i,k;
+   boolean log;
+   double v1,v2;
+   ArrayList<Double> list;
+}
+{
+    <S_OPEN>
+    t = <MODEL_IDENTIFIER>
+    <ASSIGN>
+    (
+        list = InnerNumberList()
+        { paramList.add(t.image); valueLists.add(list); }
+    |
+        ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+        { v1 = Double.parseDouble(t.image); log = false; }
+        <SEMICOLON>
+        ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+        { v2 = Double.parseDouble(t.image); }
+        <DIESIS>
+        t = <INTEGER>
+        { k = Integer.parseInt(t.image); }
+        [ <LOG> {log = true;} ]
+        {   list = generateList(v1,v2,k,log);
+            paramList.add(t.image);
+            valueLists.add(list);
+        }
+    )
+    (
+       <COMMA>
+       t = <MODEL_IDENTIFIER>
+       <ASSIGN>
+       (
+        list = InnerNumberList()
+        { paramList.add(t.image); valueLists.add(list); }
+    |
+        ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+        { v1 = Double.parseDouble(t.image); log = false; }
+        <SEMICOLON>
+        ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+        { v2 = Double.parseDouble(t.image); }
+        <DIESIS>
+        t = <INTEGER>
+        { k = Integer.parseInt(t.image); }
+        [ <LOG> {log = true;} ]
+        {   list = generateList(v1,v2,k,log);
+            paramList.add(t.image);
+            valueLists.add(list);
+        }
+    )
+    )*
+    <S_CLOSE>
+}
+
+
+
+ArrayList<Integer> IntegerList() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   int i;
+   ArrayList<Integer> list = new ArrayList<Integer>();
+}
+{
+    <S_OPEN>
+    t = <INTEGER>
+    { i = Integer.parseInt(t.image); list.add(i); }
+    (
+        <COMMA>
+        t = <INTEGER>
+        { i = Integer.parseInt(t.image); list.add(i); }
+    )*
+    <S_CLOSE>
+    { return list; }
+}
+
+
+ArrayList<Double> InnerNumberList() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   double d;
+   ArrayList<Double> list = new ArrayList<Double>();
+}
+{
+    <S_OPEN_LIST>
+    ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+    { d = Double.parseDouble(t.image); list.add(d); }
+    (
+        <COMMA>
+        ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+         { d = Double.parseDouble(t.image); list.add(d); }
+    )*
+    <S_CLOSE_LIST>
+    { return list; }
+}
+
+ArrayList<Double> NumberList() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   double d;
+   ArrayList<Double> list = new ArrayList<Double>();
+}
+{
+    <S_OPEN>
+    ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+    { d = Double.parseDouble(t.image); list.add(d); }
+    (
+        <COMMA>
+        ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+         { d = Double.parseDouble(t.image); list.add(d); }
+    )*
+    <S_CLOSE>
+    { return list; }
+}
+
+
+
+ArrayList<String> SymbolList() throws NumberFormatException, RuntimeException, ParseException :
+{
+   Token t;
+   ArrayList<String> list = new ArrayList<String>();
+}
+{
+    <S_OPEN>
+    t = <MODEL_IDENTIFIER>
+    { list.add(t.image); }
+    (
+        <COMMA>
+        t = <MODEL_IDENTIFIER>
+        { list.add(t.image); }
+    )*
+    <S_CLOSE>
+    { return list; }
+}
+
+
+void AssignmentList(String modelVar) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    String p;
+    double v;
+}
+{
+    <S_OPEN>
+    t = <MODEL_IDENTIFIER>
+    {p = t.image;}
+    <ASSIGN>
+    ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+    { v = Double.parseDouble(t.image); cmd.changeSymbolValue(modelVar,p,v); }
+    (
+        <COMMA>
+        t = <MODEL_IDENTIFIER>
+        {p = t.image;}
+        <ASSIGN>
+        ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+        { v = Double.parseDouble(t.image); cmd.changeSymbolValue(modelVar,p,v); }
+    )*
+    <S_CLOSE>
+}
+
+
+void RangeList(ExplorationManager manager) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    int k;
+    double v1,v2;
+    String p;
+    boolean log = false;
+    ArrayList<Double> valueList;
+}
+{
+    <S_OPEN>
+    t = <MODEL_IDENTIFIER>
+    {p = t.image; log = false;}
+    <ASSIGN>
+    (
+        ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+        { v1 = Double.parseDouble(t.image); }
+        <SEMICOLON>
+        ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+        { v2 = Double.parseDouble(t.image); }
+        <DIESIS>
+        t = <INTEGER>
+        { k = Integer.parseInt(t.image); }
+        [ <LOG> {log = true;} ]
+        {   try {
+                manager.addParamRange(p,v1,v2,k,log);
+            } catch (Exception e) {
+                throw new ParseException(e.getMessage());
+            }
+        }
+    |
+        valueList = InnerNumberList()
+        {   try {
+               manager.addParamRange(p,valueList);
+            } catch (Exception e) {
+                throw new ParseException(e.getMessage());
+            }
+        }
+    )
+    (
+        <COMMA>
+        t = <MODEL_IDENTIFIER>
+        {p = t.image; log = false;}
+        <ASSIGN>
+        (
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { v1 = Double.parseDouble(t.image); }
+            <SEMICOLON>
+            ( t = <INTEGER> | t = <FLOAT> | t = <FLOAT_SCIENTIFIC> )
+            { v2 = Double.parseDouble(t.image); }
+            <DIESIS>
+            t = <INTEGER>
+            { k = Integer.parseInt(t.image); }
+            [ <LOG> {log = true;} ]
+            {   try {
+                    manager.addParamRange(p,v1,v2,k,log);
+                } catch (Exception e) {
+                    throw new ParseException(e.getMessage());
+                }
+            }
+        |
+            valueList = InnerNumberList()
+            {   try {
+                   manager.addParamRange(p,valueList);
+                } catch (Exception e) {
+                    throw new ParseException(e.getMessage());
+                }
+            }
+        )
+    )*
+    <S_CLOSE>
+
+}
+
+
+////////////////////////////////////////////////////////////
+////////    Linear Noise Query List
+////////////////////////////////////////////////////////////
+
+
+void  LinearNoiseQueryList(LinearNoiseQueryManager manager) throws NumberFormatException, RuntimeException, ParseException :
+{
+    ///this is a list of the form [(N,linexpr,comp,n),...  ]    
+
+} 
+{    
+    <SQ_OPEN>
+    LinearNoiseQuery(manager)
+    ( <COMMA> LinearNoiseQuery(manager) )*
+    <SQ_CLOSE>
+}
+
+
+void LinearNoiseQuery(LinearNoiseQueryManager manager) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2,t;
+    double N;
+    double v1=0,v2=0;
+    String av;
+    String var;
+    boolean greater=false,interval;
+    boolean onPop = true;
+    boolean plus = true;
+}
+{
+    <R_OPEN>
+    ( t = <INTEGER> | t = <FLOAT> | t = <MODEL_IDENTIFIER> )
+    {
+        if (manager.isParameter(t.image))
+            N = manager.getParameterValue(t.image);
+        else N = Double.parseDouble(t.image);
+    }
+    <COMMA>
+    { t1 = null; t2 = null; av = ""; var = ""; plus = true;}
+    [ <MINUS> {plus = false;}]
+    ( t1 = <INTEGER> | t1 = <FLOAT> | t1 = <MODEL_IDENTIFIER> )
+    [<TIMES> ( t2 = <INTEGER> | t2 = <FLOAT> | t2 = <MODEL_IDENTIFIER> ) ] 
+    {
+        if (t2 == null) {
+            if (manager.isParameter(t1.image) || manager.isNumber(t1.image)) {
+                av += (av.equals("") ? (plus?"":"-") + t1.image : (plus?" + ":" - ") + t1.image);
+            }
+            else if (manager.isVariable(t1.image)) {
+                av += (av.equals("") ? (plus?"":"-") + t1.image : (plus?" + ":" - ") + t1.image);
+                var +=  (var.equals("") ?  manager.convertForStdev(t1.image) : " + " + manager.convertForStdev(t1.image));
+            }
+            else 
+                throw new ParseException("Query expressions can contain only numbers, vars and params, and must be linear. Symbol not allowed" + t1.image);
+        } else  {
+            if ( manager.isVariable(t1.image) && manager.isVariable(t2.image))
+                throw new ParseException("Query expressions can contain only numbers, vars and params, and must be linear. nonlinear term: " + t1.image + " * " + t2.image);
+            else if ( !manager.isVariable(t1.image) && !manager.isVariable(t2.image))
+                throw new ParseException("Query expressions can contain only numbers, vars and params, and must be linear. at least one variable in a product: " + t1.image + " * " + t2.image);
+            else if ( !manager.isAllowed(t1.image) || !manager.isAllowed(t2.image))
+                throw new ParseException("Query expressions can contain only numbers, vars and params, and must be linear. unknown term in: " + t1.image + " * " + t2.image);
+            else {
+                var += (var.equals("") ? manager.convertForStdev(t1.image) + " * " + manager.convertForStdev(t2.image) : 
+                        " + " + manager.convertForStdev(t1.image) + " * " + manager.convertForStdev(t2.image));
+                av += (av.equals("") ? (plus?"":"-") + t1.image + " * " + t2.image : 
+                        (plus?" + ":" - ") + t1.image + " * " + t2.image);
+            }
+        }
+   
+    }
+    ( 
+        ( <PLUS> {plus = true;} | <MINUS> {plus = false;} )
+        { t1 = null; t2 = null;  }
+        ( t1 = <INTEGER> | t1 = <FLOAT> | t1 = <MODEL_IDENTIFIER> )
+        [<TIMES> ( t2 = <INTEGER> | t2 = <FLOAT> | t2 = <MODEL_IDENTIFIER> ) ] 
+        {
+            if (t2 == null) {
+                if (manager.isParameter(t1.image) || manager.isNumber(t1.image)) {
+                    av += (av.equals("") ? (plus?"":"-") + t1.image : (plus?" + ":" - ") + t1.image);
+                }
+                else if (manager.isVariable(t1.image)) {
+                    av += (av.equals("") ? (plus?"":"-") + t1.image : (plus?" + ":" - ") + t1.image);
+                    var +=  (var.equals("") ?  manager.convertForStdev(t1.image) : " + " + manager.convertForStdev(t1.image));
+                }
+                else 
+                    throw new ParseException("Query expressions can contain only numbers, vars and params, and must be linear. Symbol not allowed" + t1.image);
+            } else  {
+                if ( manager.isVariable(t1.image) && manager.isVariable(t2.image))
+                    throw new ParseException("Query expressions can contain only numbers, vars and params, and must be linear. nonlinear term: " + t1.image + " * " + t2.image);
+                else if ( !manager.isVariable(t1.image) && !manager.isVariable(t2.image))
+                    throw new ParseException("Query expressions can contain only numbers, vars and params, and must be linear. at least one variable in a product: " + t1.image + " * " + t2.image);
+                else if ( !manager.isAllowed(t1.image) || !manager.isAllowed(t2.image))
+                    throw new ParseException("Query expressions can contain only numbers, vars and params, and must be linear. unknown term in: " + t1.image + " * " + t2.image);
+                else {
+                    var += (var.equals("") ? manager.convertForStdev(t1.image) + " * " + manager.convertForStdev(t2.image) : 
+                            " + " + manager.convertForStdev(t1.image) + " * " + manager.convertForStdev(t2.image));
+                    av += (av.equals("") ? (plus?"":"-") + t1.image + " * " + t2.image : 
+                            (plus?" + ":" - ") + t1.image + " * " + t2.image);
+                }
+            }
+        }
+    )*
+    <COMMA>
+    ( 
+        <GREATER> ( t = <INTEGER> | t = <FLOAT> | t = <MODEL_IDENTIFIER> ) 
+        { interval = false; greater = true;
+          if (manager.isNumber(t.image) ) 
+                v1 = Double.parseDouble(t.image);
+          else 
+                v1 = manager.getParameterValue(t.image);
+        }
+    |
+        <LESS> ( t = <INTEGER> | t = <FLOAT> | t = <MODEL_IDENTIFIER> )
+        { interval = false; greater = false;
+          if (manager.isNumber(t.image) ) 
+                v1 = Double.parseDouble(t.image);
+          else 
+                v1 = manager.getParameterValue(t.image);
+        }
+    |
+        <SQ_OPEN_INT> 
+        ( t1 = <INTEGER> | t1 = <FLOAT> | t1 = <MODEL_IDENTIFIER> )
+        <COMMA>
+        ( t2 = <INTEGER> | t2 = <FLOAT> | t2 = <MODEL_IDENTIFIER> )
+        <SQ_CLOSE_INT>
+        { interval = true; 
+          if (manager.isNumber(t1.image) ) 
+                v1 = Double.parseDouble(t1.image);
+          else 
+                v1 = manager.getParameterValue(t1.image);
+          if (manager.isNumber(t2.image) ) 
+                v2 = Double.parseDouble(t2.image);
+          else 
+                v2 = manager.getParameterValue(t2.image);
+        }
+    )
+    //comparison operator and maybe interval
+    [ <COMMA> <NORM> {onPop = false;} ] 
+    <R_CLOSE>
+    { 
+      if (interval) manager.addQuery(av,var,N,v1,v2,onPop); 
+      else manager.addQuery(av,var,N,v1,greater,onPop);  
+    }
+}

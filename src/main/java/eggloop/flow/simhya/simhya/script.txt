@@ -1,0 +1,25 @@
+*****************************************
+****   SCRIPT LANGUAGE FOR SimHyA    ****
+*****************************************
+
+linguaggio molto semplice, solo comandi per chiamare funzioni del software (per ora)
+in futuro forse anche variabili script + if e cicli?
+
+Idea implementazione:
+* ogni comando e ogni variabile sono un oggetto, che ha metodi specifici
+o implementa un interfaccia generale?
+* ho un interprete che parsa i comandi da stream (\n\r terminated), costruisce
+l'oggetto corrispondente e lo esegue, tenendo in memoria una hashmap di variabili
+e una lista dei comandi eseguiti, richiamabili.
+----alternativa
+* l'interprete parsa la stringa e direttamente chiama i metodi giusti, oppure usa dei metodi
+statici di una classe script.
+
+
+VARIABILI
+* modello (modello parsed viene assegnato ad una variabile)
+* simulatore??? (per lanciarlo + volte?)
+* datacollector, statisticaldata, explorerdata.
+
+COMANDI
+* parse/load model (from file or from memory?)

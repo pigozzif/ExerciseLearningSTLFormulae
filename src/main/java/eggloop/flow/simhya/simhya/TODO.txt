@@ -1,0 +1,89 @@
+Cose da fare
+
+DATA PROCESSING
+* completare metodi plot per Stochastic Explorer
+* capire quale grafico a linea utilizzare e come gestire gli istogrammi (usare jmathplot o no)
+* gestire 3d scatterplots
+* implementare 3d histograms
+* implementare 2d scatterplot con correlation e regression line, per la distribuzione
+di due variabili?
+...
+
+SIMULATION ENGINE
+* numerical stability: controlla effetto sottrazioni, e vedi se ricalcolare l'exit rate
+ogni volta facendo la somma. Magari con una variabile globale di controllo.
+* test di GB con delays
+
+
+SCRIPT LANGUAGE
+
+
+MATH PARSER
+* implementare gestione delle variabili locali, con nodi localvar (ci sono gia')
+mescolati con globalvar. implementare spt meccanismo di computazione ibrido,per espressioni
+con var locali. ovvero compute(double [] localvars) e compute(double [] localvars, double [] globalvars)
+* implementare le variabili locali dentro l'espressione? ovvero salvare il loro stato
+dentro l'espressione, lasciando all'espressione la facolta' di chiamare
+compute sui nodi come meglio crede.
+* introduci qualche operazione di manipolazione simbolica di base, come la sostituzione
+di una variabile con un'altra (serve per template/istanziazione definizioni).
+* introduci supporto per la differenziazione. Vedi come implementarlo per fast functions (hardcoded).
+Vedi a come implementarlo per funzione differenziabili a tratti (uso degli if che ritornano NaN nei
+punti in cui non e' definita la derivata?)
+* completa l'implementazione (javadoc ecc) e rilascia la libreria?
+
+
+FLAT MODEL SPECIFICATION
+* aggiungi constraints (e "computable functions"?), ovvero la possibilita' di specificare degli update
+generici, che prevedano l'esecuzione di una sequenza di istruzioni di assegnazione e anche if/while/for, e
+magari anche chiamara ricorsiva. Devono avere variabili locali.
+* aggiungi template definition nel linguaggio dei modelli/parser (serve un template object
+con variabili locali e metodo di istanziazione)
+* aggiungi costrutto loop con variabili di modello. aggiungi anche construtto if?
+Per fare questo, mi serve una classe/interfaccia model instruction, che si istanzia
+in diverse classi che gestiscono le diverse operazioni (transizione da istanziare,
+template da istanziare, loop (che ha al suo interno un array di istruzioni, che
+possono a loro volta essere loop -- devo pensare a come implementare il meccanismo di loop),
+if (con due rami).
+* aggiungi #include preprocessore, per librerie fast e per librerie nonfast di 
+funzioni, constraint e template.
+
+TDSHA MODEL SPECIFICATION
+* introduci il linguaggio. Componenti, con diversi stati, transizioni state dependent
+e sincronizzazione tra componenti. Devo definire formalmente il mapping tra TDSHA e
+flat model. Poi scrivere un parser che compila un modello tdsha in un modello flat.
+
+
+SCCP MODEL SPECIFICATION
+* definisco il linguaggio per sccp ristretto, e il suo mapping a flat.
+* definisco il linguaggio generale e lo mappo ad agent model nel modo piu` efficiente possibile
+( + flat possibile ).
+* pensa ad un estensione che usa constraint store arbitrari...
+
+
+AGENT MODEL
+* definisco un agent model, in cui posso solo simulare stocasticamente (?)
+ho degli agenti che hanno diversi stati (?usa una variabile?) e variabili locali, e
+possono anche morire o creare nuovi agenti, passando loro il riferimento a variabili
+globali e il valore di variabili locali. anche il riferimento a variabili locali?
+* pensa a degli algoritmi di simulazione efficienti per questi modelli. L'idea sarebbe essere piu'
+flat possibili.
+
+
+
+
+FAST EVENT MANAGEMENT FOR ODE/HYBRID    
+Introduce concept of discrete variable.
+Idea: conjunctive normal form + conjuct with cont. vars or only discrete vars. 
+If a conjunct with only dvars is false, then do not bother to check event condition
+need two lists, one for active and one for inactive events. 
+modify eventstate, in order to check if the event is active, passing current state and time.
+modify eventhandler, with function to check if an event is active or not. 
+only for logical events? also timed? 
+
+Partition between discrete variables and continuous variables.
+Can be done by ODE function, checking if there is a potential non null derivative for a variable. 
+
+
+
+

@@ -1,0 +1,599 @@
+/*
+Grammar for the math evaluator
+*/
+
+options {
+	STATIC = false ;
+}
+
+PARSER_BEGIN(MathParser)
+
+package simhya.matheval.parser;
+
+import simhya.matheval.*;
+import simhya.matheval.function.*;
+import java.util.ArrayList;
+import java.util.Random;
+
+public class MathParser {
+    private Evaluator evaluator;
+    private boolean parsingWithLocalVariables;
+    private boolean parsingFunctionDefinition;
+    private String functionName;
+    private int functionArity;
+    private SymbolArray localVariables;
+    private Random rand = new Random();
+    private int uniqueId;
+
+    public MathParser(Evaluator e) {
+        this(new java.io.StringReader(""));
+        evaluator = e;
+    }
+
+    public Expression parse( String expression ) throws ParseException, TokenMgrError, NumberFormatException {
+        Expression exp = null;
+        parsingWithLocalVariables = false;
+        parsingFunctionDefinition = false;
+        localVariables = null;
+        uniqueId = 0;
+        this.ReInit(new java.io.StringReader(expression));
+        exp = this.Start();
+        return exp;
+    }
+
+
+    public Expression parseWithLocalVariables(String expression,
+                       SymbolArray localVars) throws ParseException, TokenMgrError, NumberFormatException {
+        Expression exp = null;
+        parsingWithLocalVariables = true;
+        localVariables = localVars;
+        parsingFunctionDefinition = false;
+        uniqueId = rand.nextInt();
+        this.ReInit(new java.io.StringReader(expression));
+        exp = this.Start();
+        return exp;
+    }
+ 
+}
+
+PARSER_END(MathParser)
+
+/***************************************************************
+SKIP
+***************************************************************/
+
+<*> SKIP :
+{
+  " "
+  | "\t"
+  | "\n"
+  | "\r"
+
+//  | <"//" (~["\n","\r"])* ("\n"|"\r"|"\r\n")>
+//  | <"/*" (~["*"])* "*" (~["/"] (~["*"])* "*")* "/">
+}
+
+
+/***************************************************************
+TOKENS
+***************************************************************/
+
+<*> TOKEN : /* LITERALS */
+{
+	< INTEGER: ["0"-"9"] (["0"-"9"])* >
+|
+	< FLOAT:
+		(["0"-"9"])+ "." (["0"-"9"])* 
+		| "." (["0"-"9"])+ 
+	>
+|
+        < FLOAT_SCIENTIFIC:
+		(["0"-"9"])+ "." (["0"-"9"])* (<EXPONENT>)
+		| "." (["0"-"9"])+ (<EXPONENT>)
+		| (["0"-"9"])+ <EXPONENT>
+	>
+|
+	< #EXPONENT: ["e","E"] (["+","-"])? (["0"-"9"])+ >
+
+}
+
+/* IDENTIFIERS 
+	
+*/
+
+<DEFAULT> TOKEN:
+{
+	<IDENTIFIER: <LETTER>(<LETTER>|<DIGIT>|"_"|".")*>
+|
+	< #LETTER:
+	[
+		"A"-"Z",  // A - Z
+		"a"-"z"  // a - z
+	]
+	>	
+|
+	< #DIGIT: ["0"-"9"] >
+}
+
+
+/* OPERATORS */
+<*> TOKEN:
+{
+	< COMMA: "," >	
+|	< GT:   ">"  >
+|	< LT:   "<"  >
+|	< EQ:   "==" >
+|	< LE:   "<=" >
+|	< GE:   ">=" >
+|	< NEQ:   "!=" >
+|	< AND:  "&&" >
+|	< OR:   "||" >
+|	< PLUS: "+"  >
+|	< MINUS:"-"  >
+|	< MUL:  "*"  >
+|	< DIV:  "/"  >
+|	< MOD:  "%"  >
+|	< NOT:  "!"  >
+|	< POWER:"^"  >
+|	< LR:	"("  >	
+|	< RR:	")"  >
+|       < DEF:  "=" >
+}
+
+
+/***********************************************
+GRAMMAR RULES
+***********************************************/
+
+
+Expression Start() throws NumberFormatException, RuntimeException, ParseException :
+{
+    ExpressionNode node;
+    parsingFunctionDefinition = false;
+    DynamicFunction f;
+    Token t;
+}
+{
+    (
+        LOOKAHEAD( { getToken(1).kind == IDENTIFIER && getToken(2).kind == LR && !evaluator.isFunction(getToken(1).image) } )
+        FunctionDef()
+        <DEF>
+        {
+            if (parsingWithLocalVariables)
+                throw new ParseException("Parser is parsing with local variables.\n"
+                    + "Parsing function definition is not allowed");
+            parsingWithLocalVariables = true;
+            parsingFunctionDefinition = true;
+        }
+        node = Expression()
+        <EOF>
+        {
+            Expression exp = new Expression(node,evaluator);
+            exp.setLocalSymbols(localVariables);
+            f = new DynamicFunction(functionName, functionArity, exp);
+            evaluator.registerFunction(functionName,f);
+            return null;
+        }
+    |
+        LOOKAHEAD( { getToken(2).kind == DEF } )
+        t = <IDENTIFIER>
+        <DEF>
+        node = Expression()
+        <EOF>
+        {
+            Expression exp = new Expression(node,evaluator);
+            //MANAGE LOCAL VARIABLES HERE!!!
+
+            try { evaluator.addExpressionVariable(t.image,exp); }
+            catch(EvalException e) { throw new ParseException("Cannot define expression variable " + t.image +":\n" + e);}
+            return null;
+        }
+    |
+        node = Expression()
+        <EOF>
+        {
+            Expression exp = new Expression(node,evaluator);
+            //MANAGE LOCAL VARIABLES HERE!!!
+
+            return exp;
+        }
+    )
+}
+
+ExpressionNode Expression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    ExpressionNode node;
+}
+{
+    node = OrExpression()
+        { return node; }
+}
+
+
+ExpressionNode OrExpression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ExpressionNode node,n1,n2;
+}
+{
+    node = AndExpression()
+    (
+      t = <OR>
+      n2 = AndExpression()
+        {
+            n1 = node;
+            if (!n1.isLogicalExpression())
+                 throw new ParseException("First disjunct is a non-logical expression: " + n1.getExpressionString());
+            if (!n2.isLogicalExpression())
+                 throw new ParseException("Second disjunct is a non-logical expression: " + n2.getExpressionString());
+            node = new BinaryOperatorNode(evaluator.getOperatorDefinition(t.image));
+            node.addChild(n1);
+            node.addChild(n2);
+            node = evaluator.checkNodeDefinition(node);
+        }
+    )*
+        { return node; }
+}
+
+
+ExpressionNode AndExpression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ExpressionNode node,n1,n2;
+}
+{
+    node = RelationalExpression()
+    (
+      t = <AND>
+      n2 = RelationalExpression()
+        {
+            n1 = node;
+            if (!n1.isLogicalExpression())
+                 throw new ParseException("First conjuct is a non-logical expression: " + n1.getExpressionString());
+            if (!n2.isLogicalExpression())
+                 throw new ParseException("Second conjunct is a non-logical expression: " + n2.getExpressionString());
+            node = new BinaryOperatorNode(evaluator.getOperatorDefinition(t.image));
+            node.addChild(n1);
+            node.addChild(n2);
+            node = evaluator.checkNodeDefinition(node);
+        }
+     )*
+        { return node; }
+}
+
+
+
+ExpressionNode RelationalExpression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ExpressionNode node,n1,n2;
+}
+{
+    node = AddExpression()
+    [
+        ( t = <EQ> | t = <NEQ> | t = <LT> | t = <LE> | t = <GT> | t = <GE> )
+         n2 = AddExpression()
+            {
+                n1 = node;
+                node = new BinaryOperatorNode(evaluator.getOperatorDefinition(t.image));
+                node.addChild(n1);
+                node.addChild(n2);
+                node = evaluator.checkNodeDefinition(node);
+            }
+    ]
+        { return node; }
+}
+
+
+
+ExpressionNode AddExpression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ExpressionNode node,n1,n2;
+}
+{
+    node = MultExpression()
+    (
+      ( t = <PLUS> | t = <MINUS> )
+      n2 = MultExpression()
+        {
+            n1 = node;
+            node = new BinaryOperatorNode(evaluator.getOperatorDefinition(t.image));
+            node.addChild(n1);
+            node.addChild(n2);
+            node = evaluator.checkNodeDefinition(node);
+        }
+    )*
+        { return node; }
+}
+
+ExpressionNode MultExpression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ExpressionNode node,n1,n2;
+}
+{
+    node = UnaryExpression()
+    (
+      ( t = <MUL> | t = <DIV> | t = <MOD> )
+      n2 = UnaryExpression()
+        {
+            n1 = node;
+            node = new BinaryOperatorNode(evaluator.getOperatorDefinition(t.image));
+            node.addChild(n1);
+            node.addChild(n2);
+            node = evaluator.checkNodeDefinition(node);
+        }
+    )*
+        { return node; }
+}
+
+
+ExpressionNode UnaryExpression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ExpressionNode node,n1;
+}
+{
+    (
+        (
+            ( t = <PLUS> | t = <MINUS> )
+            n1 = PowerExpression()
+                {
+                    node = new UnaryOperatorNode(evaluator.getOperatorDefinition(t.image));
+                    node.addChild(n1);
+                    node = evaluator.checkNodeDefinition(node);
+                }
+        )
+    |
+        (
+            t = <NOT>
+            n1 = UnaryExpression()
+                {
+                    if (!n1.isLogicalExpression())
+                        throw new ParseException("Trying to negate a non-logical expression: " + n1.getExpressionString());
+                    node = new UnaryOperatorNode(evaluator.getOperatorDefinition(t.image));
+                    node.addChild(n1);
+                    node = evaluator.checkNodeDefinition(node);
+                }
+        )
+    |
+        node = PowerExpression()
+    )
+        { return node; }
+}
+
+
+ExpressionNode PowerExpression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ExpressionNode node,n1,n2;
+}
+{
+    node = BasicExpression()
+    [
+      t = <POWER>
+      n2 = UnaryExpression()
+        {
+            n1 = node;
+            node = new BinaryOperatorNode(evaluator.getOperatorDefinition(t.image));
+            node.addChild(n1);
+            node.addChild(n2);
+            node = evaluator.checkNodeDefinition(node);
+        }
+    ]
+        { return node; }
+}
+
+
+
+ExpressionNode BasicExpression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    ExpressionNode node;
+}
+{
+    (
+        node = Number()
+    |
+        LOOKAHEAD( { getToken(1).kind == IDENTIFIER && getToken(2).kind == LR } )
+        node = Function()
+    |
+        node = Symbol()
+    |
+        <LR>
+        node = Expression()
+        <RR>
+    )
+        { return node; }
+}
+
+
+
+ExpressionNode Number() throws NumberFormatException, RuntimeException, ParseException :
+{
+    ExpressionNode node;
+    Token t;
+    int n;
+    double d;
+}
+{
+    (
+        t = <INTEGER>
+            {
+                n = Integer.parseInt(t.image);
+                node = new NumericNode(n);
+                node = evaluator.checkNodeDefinition(node);
+            }
+    |
+        t = <FLOAT>
+            {
+                d = Double.parseDouble(t.image);
+                node = new NumericNode(d,false);
+                node = evaluator.checkNodeDefinition(node);
+            }
+    |
+        t = <FLOAT_SCIENTIFIC>
+            {
+                d = Double.parseDouble(t.image);
+                node = new NumericNode(d,true);
+                node = evaluator.checkNodeDefinition(node);
+            }
+    )
+        { return node; }
+}
+
+
+
+ExpressionNode Function() throws NumberFormatException, RuntimeException, ParseException :
+{
+    ExpressionNode node, n;
+    ArrayList<ExpressionNode> args = new ArrayList<ExpressionNode>();
+    Token name;
+    FunctionDefinition f;
+    boolean ifFunction;
+}
+{
+    name = <IDENTIFIER>
+        {
+            if (name.image.equals("if")) {
+                ifFunction = true;
+                f = null;
+            }
+            else if(evaluator.isFunction(name.image)) {
+                ifFunction = false;
+                f = evaluator.getFunctionDefinition(name.image);
+
+            } else
+                throw new ParseException("Function " + name.image + " is not defined");
+        }
+    <LR>
+    [
+        n = Expression()
+            {
+                args.add(n);
+            }
+       (
+            <COMMA>
+            n = Expression()
+                {
+                    args.add(n);
+                }
+       )*
+    ]
+    <RR>
+        { 
+            int argNumber = args.size();
+            if (ifFunction) {
+                if (argNumber != 3)
+                    throw new ParseException("Invalid number of arguments for function " + name.image);
+                node = new IfNode();
+            } else {
+                if (!f.isArityCongruent(argNumber))
+                    throw new ParseException("Invalid number of arguments for function " + name.image);
+                if (f.isBuiltinFunction()) {
+                    switch(argNumber) {
+                        case 0:
+                            node = new NullaryFunctionNode(f);
+                            break;
+                        case 1:
+                            node = new UnaryFunctionNode(f);
+                            break;
+                        case 2:
+                            node = new BinaryFunctionNode(f);
+                            break;
+                        default:
+                            node = new NaryFunctionNode(f,argNumber);
+                            break;
+                    }
+                } else {
+                    node = new DynamicFunctionNode(f,argNumber);
+                }
+            }
+            for (int i=0;i<argNumber;i++) {
+                n = args.get(i);
+                node.addChild(n);
+            }
+            node = evaluator.checkNodeDefinition(node);
+            return node;
+        }
+}
+
+
+ExpressionNode Symbol() throws NumberFormatException, RuntimeException, ParseException :
+{
+    ExpressionNode node;
+    Token t;
+    SymbolArray vars = evaluator.getVariableReference();
+    SymbolArray consts = evaluator.getConstantReference();
+    ExpressionSymbolArray exps = evaluator.getExpressionVariableReference();
+}
+{
+    t = <IDENTIFIER>
+        {
+            if (parsingWithLocalVariables && localVariables.isDefined(t.image)) {
+                int id = localVariables.getSymbolId(t.image);
+                VariableNode n1; 
+                if (parsingFunctionDefinition) 
+                    n1 = new BoundVariableNode(id,t.image,functionName);
+                else 
+                    n1 = new BoundVariableNode(id,t.image,uniqueId);
+                node = evaluator.checkNodeDefinition(n1);
+            }
+            else if (vars.isDefined(t.image)) {
+                int id = vars.getSymbolId(t.image);
+                VariableNode n1 = new VariableNode(id,vars);
+                node = evaluator.checkNodeDefinition(n1);
+            }
+            else if (consts.isDefined(t.image)) {
+                int id = consts.getSymbolId(t.image);
+                node = new ConstantNode(id,consts);
+                node = evaluator.checkNodeDefinition(node);
+            }
+            else if (exps.isDefined(t.image)) {
+                int id = exps.getSymbolId(t.image);
+                Expression exp = exps.getExpression(id);
+                node = new ExpressionVariableNode(t.image,exp);
+                node = evaluator.checkNodeDefinition(node);
+            }
+            else
+                throw new ParseException("Symbol " + t.image + " is not defined");
+            return node;
+        }
+}
+
+
+void FunctionDef() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+}
+{
+    t = <IDENTIFIER>
+    {
+        if (evaluator.isFunction(t.image))
+            throw new ParseException("Function " + t.image + " already defined");
+        functionName = t.image;
+        functionArity = 0;
+        localVariables = new SymbolArray();
+    }
+    <LR>
+    [
+        t = <IDENTIFIER>
+        {
+            try { localVariables.addSymbol(t.image,0.0); }
+            catch(EvalException e) { throw new ParseException("Error in local parameter definition of function " + functionName + 
+                                        ": " + e.getMessage()); }
+            functionArity++;
+        }
+        (
+            <COMMA>
+            t = <IDENTIFIER>
+            {
+                try { localVariables.addSymbol(t.image,0.0); }
+                catch(EvalException e) { throw new ParseException("Error in local parameter definition of function " + functionName + 
+                                            ": " + e.getMessage()); }
+                functionArity++;
+            }
+        )*
+    ]
+    <RR>
+}

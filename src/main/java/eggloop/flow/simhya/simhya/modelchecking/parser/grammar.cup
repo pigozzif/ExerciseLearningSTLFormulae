@@ -1,0 +1,170 @@
+/*  PARSER GRAMMAR FOR SMC  */
+package simhya.modelchecking.parser;
+
+import java_cup.runtime.*;
+import simhya.modelchecking.*;
+
+
+parser code {: 
+    private SMCenvironment smc = null;
+
+    public SMCparser(Scanner scanner, SMCenvironment smc) {
+        symbolFactory = new DefaultSymbolFactory();
+        setScanner(scanner);
+        this.smc = smc;
+    }
+
+    private void check_init() {
+        try {
+            if (smc == null) 
+                report_fatal_error("parser not initialized correctly, need to pass a smcExperiment",null);
+        } catch (Exception e) {
+            throw new RuntimeException("" + e.getMessage() + e );
+        }
+    }
+
+    void addParam(String name, String def) {
+        try {
+            check_init();
+            if (!smc.addParameter(name,def) )
+                report_fatal_error("Cannot add parameter " + name + ": possibly already defined",null);
+        } catch (Exception e) {
+            throw new RuntimeException("" + e.getMessage() + e );
+        }
+    }
+
+    void addProp(String name, String def) {
+        try {
+            check_init();
+            if (!smc.addAtomicProposition(name,def) )
+                report_fatal_error("Cannot add atomic proposition " + name + ": possibly already defined",null);
+        } catch (Exception e) {
+            throw new RuntimeException("" + e.getMessage() + e );
+        }
+    }
+
+    void addMTLformula(String name, String def) {
+        try {
+            check_init();
+            if (!smc.addMTLformula(name,def) )
+                report_fatal_error("Cannot add formula " + name + ": possibly already defined",null);
+        } catch (Exception e) {
+            throw new RuntimeException("" + e.getMessage() + e );
+        }
+    }
+
+    void addMTLformula(String def) {
+        try {
+            check_init();
+            if (!smc.addMTLformula(def) )
+                report_fatal_error("Cannot add formula " + def + ": possibly already defined",null);
+        } catch (Exception e) {
+            throw new RuntimeException("" + e.getMessage() + e );
+        }
+    }
+
+
+:};
+
+
+/* Terminals (tokens returned by the scanner). */
+terminal           SEMICOLON, COMMA, COLON, ASSIGN, DEFINE;
+terminal String    PLUS, MINUS, TIMES, DIVIDE, MOD, POW;
+terminal String    UMINUS, LROUND, RROUND;
+terminal String    IDENTIFIER;
+terminal String    EQUAL, NOTEQUAL, LESSEQUAL, GREATEREQUAL, LESS, GREATER;
+terminal String    NUMBER;
+terminal           RESERVED, PARAM, MTL;
+terminal String    FORMULA;
+
+/* Non-terminals */
+non terminal             smc, formula, formula_list, decl_list, param_decl, prop_decl;
+non terminal String      atomic_constraint, expr, basic_expr, args;
+non terminal String      relop;
+
+
+
+/* Precedences */
+
+precedence nonassoc EQUAL, NOTEQUAL, LESSEQUAL, GREATEREQUAL, LESS, GREATER;
+precedence left PLUS, MINUS;
+precedence left TIMES, DIVIDE, MOD;
+precedence left POW;
+precedence left UMINUS;
+
+
+
+/* Grammar */
+
+smc ::=  decl_list MTL formula_list;
+
+decl_list ::= param_decl decl_list
+            | prop_decl decl_list
+            | ;
+
+param_decl ::= PARAM IDENTIFIER:id ASSIGN expr:e SEMICOLON
+               {: parser.addParam(id,e); :};
+
+prop_decl ::= IDENTIFIER:id DEFINE atomic_constraint:a SEMICOLON
+               {: parser.addProp(id,a); :};
+
+formula_list ::= formula formula_list
+               | ;
+
+formula ::= COLON IDENTIFIER:id COLON FORMULA:f SEMICOLON
+            {: parser.addMTLformula(id,f); :}
+           | FORMULA:f SEMICOLON
+            {: parser.addMTLformula(f); :};
+
+
+
+atomic_constraint ::=  expr:e1 relop:r expr:e2 
+                    {: RESULT = new String(e1 + " " + r + " " + e2); :};
+
+
+relop ::=  EQUAL:id   {: RESULT = id; :}
+         | NOTEQUAL:id   {: RESULT = id; :}
+         | LESSEQUAL:id   {: RESULT = id; :}
+         | GREATEREQUAL:id   {: RESULT = id; :}
+         | LESS:id   {: RESULT = id; :} 
+         | GREATER:id   {: RESULT = id; :};
+
+
+basic_expr ::= NUMBER:n   {: RESULT = n; :}
+             | IDENTIFIER:id   {: RESULT = id; :} 
+             | IDENTIFIER:id LROUND args:a RROUND  
+                {: RESULT = new String( id + "(" + a + ")" ); :};
+
+args ::= expr:e COMMA args:a  
+         {: RESULT = new String( e + ", " + a ); :}
+       | expr:e {:  RESULT = e; :};  
+
+
+expr      ::= expr:e1 PLUS:o expr:e2    
+	      {: RESULT = new String( e1 + " " + o + " " + e2 );  :} 
+	      | 
+              expr:e1 MINUS:o expr:e2    
+              {: RESULT = new String( e1 + " " + o + " " + e2 ); :} 
+	      | 
+              expr:e1 TIMES:o expr:e2 
+	      {: RESULT = new String( e1 + " " + o + " " + e2 ); :} 
+	      | 
+              expr:e1 DIVIDE:o expr:e2 
+	      {: RESULT = new String( e1 + " " + o + " " + e2 ); :} 
+	      | 
+              expr:e1 MOD:o expr:e2 
+	      {: RESULT = new String( e1 + " " + o + " " + e2 ); :} 
+	      | 
+              expr:e1 POW:o expr:e2 
+	      {: RESULT = new String( e1 + o + e2 ); :} 
+	      | 
+              basic_expr:e                 
+	      {: RESULT = e; :} 
+	      | 
+              MINUS:o expr:e             
+	      {: RESULT = new String( o + e ); :} 
+	      %prec UMINUS
+	      | 
+              LROUND expr:e RROUND    
+	      {: RESULT = new String( "( " + e + " )" ); :} 
+	      ;

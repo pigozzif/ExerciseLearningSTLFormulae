@@ -1,0 +1,785 @@
+/*
+Grammar for the flat model file
+*/
+
+options {
+	STATIC = false ;
+}
+
+PARSER_BEGIN(FlatParser)
+
+package simhya.model.flat.parser;
+
+import simhya.model.store.*;
+import simhya.model.store.faststore.*;
+import simhya.model.transition.*;
+import simhya.model.flat.*;
+import simhya.matheval.Expression;
+import simhya.matheval.SymbolArray;
+
+import java.util.ArrayList;
+
+
+public class FlatParser {
+    private FastStore store;
+    private FlatModel model;
+    private FlatTemplate template;
+    private boolean parsingTemplate;
+    private ArrayList<String> uniqueNames;
+    private boolean useDots;
+   
+    public FlatParser() {
+        this(new java.io.StringReader(""));
+    }
+
+    public FlatModel parseFromString( String modelDef ) throws ParseException, TokenMgrError, NumberFormatException {
+        model = null;
+        parsingTemplate = false;
+        template = null;
+        uniqueNames = new ArrayList<String>();
+        useDots = false;
+        this.ReInit(new java.io.StringReader(modelDef));
+        this.Start();
+        return model;
+    }
+
+    public FlatModel parseFromFile( String filename ) throws ParseException, TokenMgrError, NumberFormatException {
+        model = null;
+        parsingTemplate = false;
+        template = null;
+        useDots = false;
+        uniqueNames = new ArrayList<String>();
+        try { this.ReInit(new java.io.FileReader(filename)); }
+        catch(java.io.IOException e) {throw new ParseException("Error while opening file " + filename + ": " + e); }
+        this.Start();
+        return model;
+    }
+
+    public FlatModel parseFromStringWithDots( String modelDef ) throws ParseException, TokenMgrError, NumberFormatException {
+        model = null;
+        parsingTemplate = false;
+        template = null;
+        uniqueNames = new ArrayList<String>();
+        useDots = true;
+        this.ReInit(new java.io.StringReader(modelDef));
+        this.Start();
+        return model;
+    }
+
+    public FlatModel parseFromFileWithDots( String filename ) throws ParseException, TokenMgrError, NumberFormatException {
+        model = null;
+        parsingTemplate = false;
+        template = null;
+        useDots = true;
+        uniqueNames = new ArrayList<String>();
+        try { this.ReInit(new java.io.FileReader(filename)); }
+        catch(java.io.IOException e) {throw new ParseException("Error while opening file " + filename + ": " + e); }
+        this.Start();
+        return model;
+    }
+
+
+
+    private boolean isBlank(String s) {
+        for (int i=0;i<s.length();i++)
+            if (s.charAt(i) != ' ' && s.charAt(i) != '\u0009')
+                return false;
+        return true;
+    }
+
+    private void checkDots(String s) throws ParseException {
+        if (!useDots && s.contains("."))
+            throw new ParseException("Symbol " + s + " cannot contain dots, only numbers, letters and underscores");
+    }
+    
+
+}
+PARSER_END(FlatParser)
+
+/***************************************************************
+SKIP
+***************************************************************/
+
+<DEFAULT,RESET,BUILTIN,BEGINMODEL,TEMPLATEDEF,TEMPLATE> SKIP :
+{
+  " "
+  | "\t"
+  | "\n"
+  | "\r"
+
+  | <"//" (~["\n","\r"])* ("\n"|"\r"|"\r\n")>
+  | <"/*" (~["*"])* "*" (~["/"] (~["*"])* "*")* "/">
+}
+
+/***************************************************************
+TOKENS
+***************************************************************/
+
+ /* LITERALS */
+TOKEN : { < #INTEGER: ("-")? ["0"-"9"] (["0"-"9"])* > }
+TOKEN : { < #FLOAT:
+                            ("-")?  (["0"-"9"])+ "." (["0"-"9"])*
+                            | ("-")?  "." (["0"-"9"])+
+                    > }
+TOKEN : { < #FLOAT_SCIENTIFIC:
+                             ("-")? (["0"-"9"])+ "." (["0"-"9"])* (<EXPONENT>)
+                            |  ("-")? "." (["0"-"9"])+ (<EXPONENT>)
+                            |  ("-")? (["0"-"9"])+ <EXPONENT>
+                    > }
+TOKEN : { < #EXPONENT: ["e","E"] (["+","-"])? (["0"-"9"])+ > }
+TOKEN: { < #LETTER: ["A"-"Z","a"-"z"] > }
+TOKEN: { < #DIGIT: ["0"-"9"] > }
+
+
+	
+
+/*
+IDENTIFIERS
+*/
+
+<DEFAULT> TOKEN : { <KEYWORD_MODEL : "model" > : BEGINMODEL}
+<DEFAULT> TOKEN : { <KEYWORD_DELAY : "delay" > }
+<DEFAULT> TOKEN : { <KEYWORD_CONT : "cont" > }
+<DEFAULT> TOKEN : { <KEYWORD_PARAM : "param" > }
+<DEFAULT> TOKEN : { <KEYWORD_FUNCTION : "function" > : MATH_FDEF }
+<DEFAULT> TOKEN : { <KEYWORD_EXPRESSION : "expression" > : MATH_FDEF }
+<DEFAULT> TOKEN : { <KEYWORD_TEMPLATE : "template" > : TEMPLATEDEF }
+<DEFAULT> TOKEN : { <KEYWORD_LET : "let" > : TEMPLATE }
+<RESET> TOKEN : { <KEYWORD_STOP : "stop" > }
+
+
+
+<DEFAULT,MATH_FDEF,MATH_SYMBOL> TOKEN : { <EOL : ";" > : DEFAULT }
+<DEFAULT,TEMPLATE> TOKEN : { <SEMICOLON : ":" > }
+<DEFAULT> TOKEN : { <ASSIGN : "=" > : MATH_SYMBOL}
+<DEFAULT> TOKEN : { <LBR : "{" > : MATH}
+<DEFAULT> TOKEN : { <LSQ : "[" > : MATH}
+<DEFAULT> TOKEN : { <ASTERISK : "*" > }
+<DEFAULT> TOKEN : { <AT_TIME : "@time" > }
+<DEFAULT> TOKEN : { <AT_INF : "@inf" > }
+<DEFAULT> TOKEN : { <AT : "@" > }
+
+<BEGINMODEL,TEMPLATEDEF> TOKEN : { <BEGIN : "{" > : DEFAULT}
+<DEFAULT> TOKEN : { <END : "}" > }
+
+<TEMPLATE> TOKEN : { <LSQ_TEMPLATE : "[" > : MATH_TEMPLATE}
+<MATH_TEMPLATE> TOKEN : { <SEP_TEMPLATE : (<SPACE>)*  ";" > }
+<MATH_TEMPLATE> TOKEN : { <RSQ_TEMPLATE : (<SPACE>)*  "]" > : DEFAULT}
+
+<DEFAULT,RESET,BUILTIN> TOKEN : {<NUMBER : <INTEGER>|<FLOAT>|<FLOAT_SCIENTIFIC> > }
+<DEFAULT,RESET,BUILTIN,BEGINMODEL,TEMPLATEDEF,TEMPLATE> TOKEN: { <IDENTIFIER: <LETTER>(<LETTER>|<DIGIT>|"_"|".")*> }
+<RESET> TOKEN : { <RES_ASSIGN : "=" > : MATH}
+<RESET> TOKEN : { <INCREMENT : "+=" > }
+<RESET> TOKEN : { <DECREMENT : "-=" > }
+
+<BUILTIN> TOKEN : { <LR : "(" > }
+<BUILTIN> TOKEN : { <RR : ")" > : MATH }
+<BUILTIN> TOKEN : { <COMMA : "," > }
+
+<TEMPLATEDEF> TOKEN : { <ARG_BEGIN : "[" > }
+<TEMPLATEDEF> TOKEN : { <ARG_END : "]" > }
+<TEMPLATEDEF> TOKEN : { <SEP : ";" > }
+
+<MATH,RESET> TOKEN : { <ARG_SEP : (<SPACE>)*  ";" > : RESET }
+<MATH,RESET> TOKEN : { <RSQ : (<SPACE>)*  "]" > : DEFAULT}
+<MATH> TOKEN : { <RBR : (<SPACE>)*  "}" > : DEFAULT}
+<MATH> TOKEN : { <IMPLY : (<SPACE>)* ":->" > : RESET}
+<MATH> TOKEN : { <SEMICOLON_MATH : (<SPACE>)* ":" >}
+<MATH> TOKEN : { <DIESIS : (<SPACE>)* "#" > : BUILTIN}
+
+
+<MATH,MATH_FDEF,MATH_SYMBOL,MATH_TEMPLATE> TOKEN : { <MATH_EXPR : (<DIGIT> | <LETTER> | <SYMBOL> | <SPACE>)+ > }
+<MATH,MATH_FDEF,MATH_SYMBOL,MATH_TEMPLATE> TOKEN : { <#SPACE : " " | "\t"> }
+TOKEN : { <#SYMBOL : [".", "=", "+", "-", "*", "/", "%", "^", "(", ")", "!", "<", ">", ",", "&", "|", "_"]> }
+
+
+/***********************************************
+GRAMMAR RULES
+***********************************************/
+
+
+void Start() throws NumberFormatException, RuntimeException, ParseException :
+{
+    String name = "stochastic_model";
+    Token t;
+}
+{
+    <KEYWORD_MODEL>
+    [ 
+        t = <IDENTIFIER>
+        {  name = t.image; }
+    ]
+    <BEGIN>
+    {
+        store = new FastStore();
+        model = new FlatModel(name);
+    }
+    (
+        Variable()
+    |
+        Parameter()
+    |
+        Function()
+    |
+        Expression()
+    |
+        Template()
+           //     )+
+           //     {
+           //         store.finalizeVariableInitialization();
+           //         model.setStore(store);
+           //     }
+           //     (
+    |
+        Transition()
+    |
+        TemplateInstance()
+    )+
+    <END>
+    <EOF>
+    {
+        store.finalizeVariableInitialization();
+        model.setStore(store);
+        model.finalizeInitialization();
+    }
+}
+
+
+void Variable() throws NumberFormatException, RuntimeException, ParseException :
+{
+    String name;
+    double value;
+    Token t1,t2;
+    Expression exp;
+}
+{
+    LOOKAHEAD( { getToken(2).kind == ASSIGN } )
+    t1 = <IDENTIFIER>
+    <ASSIGN>
+    t2 = <MATH_EXPR>
+    <EOL>
+    {
+        if (!parsingTemplate) {
+            name = t1.image;
+            checkDots(name);
+            try { exp = store.parseExpression(t2.image); }
+                catch(Exception e) {
+                    throw new ParseException("Cannot parse expression defining variable " + t1.image + ", which equals " + t2.image + "\n" + e.getMessage());
+                }
+            value = exp.computeValue();
+            try { if (exp.isNumericConstant()) store.addVariable(name,value); else store.addVariable(name,value,exp);}
+            catch(Exception e) {
+                throw new ParseException("Cannot define variable " + name +"\n" + e.getMessage());
+            }
+        } else {
+            name = t1.image;
+            checkDots(name);
+            try { exp = store.parseExpression(t2.image,template.getAllLocalVariables()); }
+                catch(Exception e) {
+                    throw new ParseException("Cannot parse expression defining variable " + t1.image + ", which equals " + t2.image + "\n" + e.getMessage());
+                }
+            value = 0;
+            try { if (exp.isNumericConstant()) template.addLocalVariable(name,value);
+                  else template.addLocalVariable(name,value,exp);}
+            catch(Exception e) {
+                throw new ParseException("Cannot define local variable " + name +"\n" + e.getMessage());
+            }
+        }
+    }
+}
+
+
+void Parameter() throws NumberFormatException, RuntimeException, ParseException :
+{
+    String name;
+    double value;
+    Token t1,t2;
+    Expression exp;
+}
+{
+    <KEYWORD_PARAM>
+    t1 = <IDENTIFIER>
+    <ASSIGN>
+    t2 = <MATH_EXPR>
+    <EOL>
+    {
+        name = t1.image;
+        checkDots(name);
+        try { exp = store.parseExpression(t2.image); }
+            catch(Exception e) {
+                throw new ParseException("Cannot parse expression defining parameter " + t1.image + ", which equals " + t2.image + "\n" + e);
+            }
+        value = exp.computeValue();
+        try { if (exp.isNumericConstant()) store.addParameter(name,value); else store.addParameter(name,value,exp); }
+        catch(Exception e) {
+            throw new ParseException("Cannot define parameter " + name +"\n" + e.getMessage());
+        }
+    }
+}
+
+
+void Function() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+}
+{
+    <KEYWORD_FUNCTION>
+    t = <MATH_EXPR>
+    <EOL>
+    {
+        try { store.addNewFunctionDefinition(t.image); }
+        catch(Exception e) {
+            throw new ParseException("Cannot add function definition " + t.image +"\n" + e.getMessage());
+        }
+    }
+}
+
+
+void Expression() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+}
+{
+    <KEYWORD_EXPRESSION>
+    t = <MATH_EXPR>
+    <EOL>
+    {
+        try { store.addNewExpressionDefinition(t.image); }
+        catch(Exception e) {
+            throw new ParseException("Cannot add expression definition " + t.image +"\n" + e.getMessage());
+        }
+    }
+}
+
+
+void Transition() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    Reset r;
+    Transition trans;
+    Function f;
+    Predicate p;
+    String name = "unnamed";
+}
+{
+    [
+        t = <IDENTIFIER>
+        {
+            name = t.image;
+        }
+        <SEMICOLON>
+    ]
+    {
+        trans = new Transition(name,TType.STOCHASTIC);
+    }
+    [
+        <ASTERISK>
+        {
+            trans.setType(TType.CONTINUOUS);
+        }
+    ]
+    <LSQ>
+    p = Pred()
+    {
+        trans.setGuard(new Guard(p));
+    }
+    <IMPLY>
+    Res(trans)
+    <RSQ>
+    (
+        <AT>
+        <LBR>
+        f = Func()
+        <RBR>
+        {
+            trans.setRate(new Rate(f));
+        }
+    |
+        <AT_TIME>
+        <LBR>
+        f = Func()
+        <RBR>
+        {
+            trans.setType(TType.TIMED);
+            trans.setTimedActivation(new TimedActivation(f));
+        }
+    |
+        <AT_INF>
+        <LBR>
+        f = Func()
+        <RBR>
+        {
+            trans.setType(TType.INSTANTANEOUS);
+            trans.setRate(new Rate(f));
+        }
+   )
+   [  DelayDef(trans) ]
+   [  Cont(trans)  ]
+   <EOL>
+   {
+        if (parsingTemplate) template.addTransition(trans);
+        else model.addTransition(trans);
+   }
+}
+
+
+void DelayDef(Transition t) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Function f;
+    Predicate p;
+    Reset r;
+}
+{
+    <KEYWORD_DELAY>
+    <LBR>
+    f = Func()
+    <RBR>
+    <SEMICOLON>
+    <LSQ>
+    p = Pred()
+    <IMPLY>
+    r = DelayRes(t)
+    <RSQ>
+    {
+        t.setDelay(new Delay(f),new Guard(p),r);
+    }
+}
+
+void Cont(Transition t) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Predicate p1=null,p2=null;
+}
+{
+    <KEYWORD_CONT>
+    <LBR>
+    p1 = Pred()
+    [
+        <SEMICOLON_MATH>
+        p2 = Pred()
+    ]
+    <RBR>
+    {
+        if (t.getType() == TType.TIMED || t.getType() == TType.INSTANTANEOUS )
+            throw new ParseException("Cannot define continuity condition for a non-stochastic transition.");
+        t.setType(TType.HYBRID);
+        if (p2 == null)
+            t.setContinuityStatus(new ContinuityStatus(p1));
+        else 
+            t.setContinuityStatus(new ContinuityStatus(p1,p2));
+    }
+}
+
+Reset DelayRes(Transition t) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Reset r = new Reset();
+}
+{
+
+        [
+            ( AtomicReset(r) | <KEYWORD_STOP> { t.setStoppingAfterDelay(true); } )
+            (
+                <ARG_SEP>
+                ( AtomicReset(r) | <KEYWORD_STOP> { t.setStoppingAfterDelay(true); } )
+            )*
+        ]
+
+    {
+        return r;
+    }
+}
+
+void Res(Transition t) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Reset r = new Reset();
+}
+{
+        [
+            ( AtomicReset(r) | <KEYWORD_STOP> { t.setStopping(true); } )
+            (
+                <ARG_SEP>
+                ( AtomicReset(r) | <KEYWORD_STOP> { t.setStopping(true); } )
+            )*
+        ]
+    {
+        t.setReset(r);
+    }
+}
+
+void AtomicReset(Reset r) throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t1,t2;
+    Function f;
+    int id,id2;
+    String name;
+    double v;
+}
+{
+
+    t1 = <IDENTIFIER>
+    {
+        name = t1.image;
+        checkDots(name);
+        if (parsingTemplate && template.isLocalVariable(name))
+            id = -1;
+        else {
+            try {
+                id = store.getVariableID(t1.image);
+            }
+            catch(Exception e) {
+                throw new ParseException("Variable " + t1.image + "is not defined\n" + e.getMessage());
+            }
+       }
+    }
+    (
+        <RES_ASSIGN>
+        f =Func()
+    |
+        LOOKAHEAD( { getToken(1).kind == INCREMENT && getToken(2).kind == NUMBER } )
+        <INCREMENT>
+        t2 = <NUMBER>
+        {
+            v = Double.parseDouble(t2.image);
+            if (parsingTemplate)
+                f = new ConstantIncrementFunction(store,name,v);
+            else
+                f = new ConstantIncrementFunction(store,id,v);
+        }
+    |
+        LOOKAHEAD( { getToken(1).kind == DECREMENT && getToken(2).kind == NUMBER } )
+        <DECREMENT>
+        t2 = <NUMBER>
+        {
+            v = Double.parseDouble(t2.image);
+            if (parsingTemplate)
+                f = new ConstantIncrementFunction(store,name,-v);
+            else
+                f = new ConstantIncrementFunction(store,id,-v);
+        }
+    |
+        LOOKAHEAD( { getToken(1).kind == INCREMENT && getToken(2).kind == IDENTIFIER } )
+        <INCREMENT>
+        t2 = <IDENTIFIER>
+        {
+            try { checkDots(t2.image); id2 = store.getParameterID(t2.image); }
+            catch(Exception e) {
+                throw new ParseException("Parameter " + t2.image + "is not defined\n" + e.getMessage());
+            }
+            if (parsingTemplate)
+                f = new ConstantParametricIncrementFunction(store,name,id2,true);
+            else
+                f = new ConstantParametricIncrementFunction(store,id,id2,true);
+        }
+    |
+        LOOKAHEAD( { getToken(1).kind == DECREMENT && getToken(2).kind == IDENTIFIER } )
+        <DECREMENT>
+        t2 = <IDENTIFIER>
+        {
+            try { checkDots(t2.image); id2 = store.getParameterID(t2.image); }
+            catch(Exception e) {
+                throw new ParseException("Parameter " + t2.image + "is not defined\n" + e.getMessage());
+            }
+            if (parsingTemplate)
+                f = new ConstantParametricIncrementFunction(store,name,id2,false);
+            else
+                f = new ConstantParametricIncrementFunction(store,id,id2,false);
+        }
+    )
+    {
+        r.addAtomicReset(id,name,f);
+    }
+}
+
+Predicate Pred() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Predicate p = null;
+    Token t;
+   
+}
+{
+    [
+        t = <MATH_EXPR>
+        {
+            //if (! isBlank(t.image) ) {
+                try { if (parsingTemplate) p = store.addPredicate(t.image,template.getAllLocalVariables());
+                      else p = store.addPredicate(t.image); }
+                catch(Exception e) {
+                    throw new ParseException("Cannot parse predicate " + t.image + "\n" + e.getMessage());
+                }
+            //}
+        }
+    ]
+    {
+        if (p != null)
+            return p;
+        else
+            return new ConstantPredicate(true);
+    }
+}
+
+
+
+Function Func() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Function f;
+    ArrayList<String> args = new ArrayList<String>();
+    Token t,t1;
+}
+{
+    (
+        <DIESIS>
+        t = <IDENTIFIER>
+        <LR>
+        [
+            ( t1 = <IDENTIFIER> | t1 = <NUMBER> )
+            { args.add(t1.image); }
+            (
+                <COMMA>
+                ( t1 = <IDENTIFIER> | t1 = <NUMBER> )
+                { args.add(t1.image); }
+            )*
+        ]
+        <RR>
+        {
+            try { if (parsingTemplate) f = store.getFunctionFromLibrary(t.image,args,template.getAllLocalVariables()); 
+                  else f = store.getFunctionFromLibrary(t.image,args);  }
+            catch (Exception e) { throw new ParseException("Cannot add library function " + t.image + "\n" + e.getMessage()); }
+        }
+    |
+       t = <MATH_EXPR>
+        {
+            try { if (parsingTemplate) f = store.addFunction(t.image,template.getAllLocalVariables()); 
+                  else f = store.addFunction(t.image);  }
+            catch(Exception e) {
+                throw new ParseException("Cannot parse function" + t.image + "\n" + e.getMessage());
+            }
+        }
+    )
+    {
+        return f;
+    }
+}
+
+
+
+///template definition
+
+void Template() throws NumberFormatException, RuntimeException, ParseException :
+{
+    String name;
+    SymbolArray boundedVars = new SymbolArray();
+    Token t;
+}
+{
+    <KEYWORD_TEMPLATE>
+    t = <IDENTIFIER>
+    {
+        name = t.image;
+        if (model.isTemplate(name))
+            throw new ParseException("Template " + name + " already defined");
+    }
+    <ARG_BEGIN>
+    [
+        t = <IDENTIFIER>
+        {
+            checkDots(t.image);
+            boundedVars.addSymbol(t.image,0);
+        }
+        (
+            <SEP>
+            t = <IDENTIFIER>
+            {
+                checkDots(t.image);
+                if (boundedVars.containsSymbol(t.image))
+                    throw new ParseException("Parametric argument " + t.image + " already defined for this template");
+                 boundedVars.addSymbol(t.image,0);
+            }
+        )*
+    ]
+    <ARG_END>
+    {
+        template = new FlatTemplate(name,boundedVars);
+        parsingTemplate = true;
+    }
+    <BEGIN>
+    (
+        Variable()
+    )*
+    (
+        Transition()
+    )+
+    <END>
+    {
+        model.addTemplate(name,template);
+        template = null;
+        parsingTemplate = false;
+    }
+}
+
+
+
+
+void TemplateInstance() throws NumberFormatException, RuntimeException, ParseException :
+{
+    Token t;
+    ArrayList<Expression> expr = new ArrayList<Expression>();
+    String name;
+    String uniqueName = "";
+    boolean named = false;
+}
+{
+    <KEYWORD_LET>
+    [
+        LOOKAHEAD( { getToken(2).kind == SEMICOLON } )
+        t = <IDENTIFIER>
+        <SEMICOLON>
+        {
+            if (uniqueNames.contains( t.image))
+                throw new ParseException("Names of template instances must be unique: " + t.image);
+            uniqueName = t.image;
+            uniqueNames.add(uniqueName);
+            named = true;
+        }
+    ]
+    t = <IDENTIFIER>
+    {
+        name = t.image;
+        if(!model.isTemplate(name))
+            throw new ParseException("template " + name + " undefined");
+        template = model.getTemplateDefinition(name);
+    }
+    <LSQ_TEMPLATE>
+    [
+        t = <MATH_EXPR>
+        {
+            try {
+                Expression exp = store.parseExpression(t.image);
+                expr.add(exp);
+            } catch (Exception e) {
+                throw new ParseException("Cannot parse expression" + t.image + "\n" + e.getMessage());
+            }
+        }
+        (
+            <SEP_TEMPLATE>
+            t = <MATH_EXPR>
+            {
+                try {
+                    Expression exp = store.parseExpression(t.image);
+                    expr.add(exp);
+                } catch (Exception e) {
+                    throw new ParseException("Cannot parse expression" + t.image + "\n" + e.getMessage());
+                }
+            }
+        )*
+    ]
+    <RSQ_TEMPLATE>
+    {
+        if (expr.size() != template.getArity())
+            throw new ParseException("Wrong number of arguments passed to template " + name
+                + ": required " +  template.getArity() + " found " + expr.size());
+        for (Transition tr : (named ? template.generateNewInstance(store,expr,uniqueName) : template.generateNewInstance(store,expr)))
+            model.addTransition(tr);
+        template = null;
+    }
+    <EOL>
+
+}
