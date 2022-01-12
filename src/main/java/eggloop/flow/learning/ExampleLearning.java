@@ -10,6 +10,10 @@ import eggloop.flow.utils.files.Utils;
 
 import java.util.Arrays;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BiFunction;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -32,13 +36,24 @@ public class ExampleLearning {
     // x_1^1, x_2^1, x_1^2, x_2^2, x_1^3, x_2^3, ..., x_1^T, x_2^T
     // for a total of T timesteps, and using the superscript to denote the current timestep
     private static double[][][] ds2SpatialValues = Utils.readMatrixMultiFromFile(ds2Times.length, FILE_PATH + "trainData.csv");
+    private static long TIMEOUT_SECONDS = 15 * 60; // 15 minutes
 
     public static void main(String[] args) {
-        for (int seed=0; seed < 10; ++seed) {
+        int seed = 0; // current seed
+        int count = 0; // number of successful runs
+        while (count < 10) {
             LOGGER.setLevel(Level.FINE);
             learning = new Learning(LOGGER, DISCRIMINATION_FUNCTION);
             //learn(new Random(seed), LOGGER);
-            learnCV(new Random(seed), LOGGER);
+            Random random = new Random(seed);
+            try {
+                CompletableFuture.supplyAsync(() -> learnCV(random, LOGGER)).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                count += 1;
+            }
+            catch (Exception ignored) {
+                seed += 1;
+                LOGGER.log(Level.INFO, "RUN TIMEOUT");
+            }
         }
     }
 
@@ -53,7 +68,7 @@ public class ExampleLearning {
         System.out.println("Classified as Positive Trajectories [percentage, variance] = " + Arrays.toString(performances[1]));
     }
 
-    private static void learnCV(Random random, Logger logger) {
+    private static int learnCV(Random random, Logger logger) {
         // load data, and split them into train/test sets folds using k-fold approach
         TrajectoryMultiReconstructionCV data = new TrajectoryMultiReconstructionCV(ds2Times, ds2SpatialValues, ds2Labels, random);
         data.split(3, 5);
@@ -61,6 +76,7 @@ public class ExampleLearning {
         double[][] performances = core(random, data, logger);
         System.out.println("Classified as Negative Trajectories [percentage, variance] = " + Arrays.toString(performances[0]));
         System.out.println("Classified as Positive Trajectories [percentage, variance] = " + Arrays.toString(performances[1]));
+        return 0;
     }
 
     private static double[][] core(Random random, DataSetSplit data, Logger logger) {
